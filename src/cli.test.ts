@@ -597,10 +597,11 @@ describe('createProgram root help descriptions', () => {
         group: 'tab',
         command: 'opencli browser <session> tab',
         usage: 'opencli browser <session> tab <command> [args] [options]',
-        command_count: 4,
+        command_count: 5,
       });
       expect(data.commands.map((cmd: any) => cmd.name)).toEqual([
         'tab close',
+        'tab find',
         'tab list',
         'tab new',
         'tab select',
@@ -1496,7 +1497,7 @@ describe('browser tab targeting commands', () => {
     expect(consoleLogSpy.mock.calls.flat().join('\n')).toContain('"closed": "tab-2"');
   });
 
-  it('rejects closing a stale tab target ID that is no longer in the current session', async () => {
+  it('passes stale close identities to the extension for idempotent ownership verification', async () => {
     browserState.page = {
       session: 'test',
       tabs: vi.fn().mockResolvedValue([]),
@@ -1506,9 +1507,8 @@ describe('browser tab targeting commands', () => {
     const program = createProgram('', '');
     await program.parseAsync(['node', 'opencli', 'browser', '--session', 'test', 'tab', 'close', 'tab-stale']);
 
-    expect(process.exitCode).toBeDefined();
-    expect(browserState.page?.closeTab).not.toHaveBeenCalled();
-    expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Target tab tab-stale is not part of the current browser session');
+    expect(process.exitCode).toBeUndefined();
+    expect(browserState.page?.closeTab).toHaveBeenCalledWith('tab-stale');
   });
 
   it('browser analyze merges HttpOnly cookie names from page.getCookies and drains stale capture before verdict', async () => {

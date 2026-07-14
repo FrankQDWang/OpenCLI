@@ -1,0 +1,15 @@
+{
+  "implementation": "seektalent-opencli",
+  "bridgeBuildId": "seektalent-opencli-1.8.6+prototype.1",
+  "protocolVersion": {
+    "major": 1,
+    "minor": 0
+  },
+  "capabilities": [
+    "control-fence.v1",
+    "tab.close-verified.v1",
+    "tab.create-in-existing-window.v1",
+    "tab.find.v1",
+    "tab.idle-deadline.v1"
+  ]
+}

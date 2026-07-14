@@ -4,10 +4,12 @@ import { readFileSync } from 'fs';
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
 const compatRange: string = pkg.opencli?.compatRange ?? '>=0.0.0';
+const bridgeIdentity = JSON.parse(readFileSync(resolve(__dirname, '..', 'bridge-identity.json'), 'utf-8'));
 
 export default defineConfig({
   define: {
     __OPENCLI_COMPAT_RANGE__: JSON.stringify(compatRange),
+    __OPENCLI_BRIDGE_IDENTITY__: JSON.stringify(bridgeIdentity),
   },
   build: {
     outDir: 'dist',

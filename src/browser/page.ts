@@ -9,7 +9,16 @@
  * page-scoped operations target the correct page without guessing.
  */
 
-import type { BrowserCookie, BrowserDownloadWaitResult, BrowserEvaluateFunction, ScreenshotOptions } from '../types.js';
+import type {
+  BrowserControlledTab,
+  BrowserControlFence,
+  BrowserCookie,
+  BrowserDownloadWaitResult,
+  BrowserEvaluateFunction,
+  BrowserHostTab,
+  BrowserTabCloseResult,
+  ScreenshotOptions,
+} from '../types.js';
 import { sendCommand, sendCommandFull } from './daemon-client.js';
 import { buildEvaluateExpression } from './utils.js';
 import { saveBase64ToFile } from '../utils.js';
@@ -51,6 +60,8 @@ export class Page extends BasePage {
     private readonly siteSession?: 'ephemeral' | 'persistent',
     /** Soft profile preference (config default) — daemon arbitrates; see profileRouteParams. */
     public readonly preferredContextId?: string,
+    private readonly controlKey?: string,
+    private readonly fenceToken?: number,
   ) {
     super();
     this._idleTimeout = idleTimeout;
@@ -62,7 +73,7 @@ export class Page extends BasePage {
   private _networkCaptureWarned = false;
 
   /** Helper: spread session into command params */
-  private _sessionOpts(): { session: string; surface: 'browser' | 'adapter'; idleTimeout?: number; contextId?: string; preferredContextId?: string; windowMode?: 'foreground' | 'background'; siteSession?: 'ephemeral' | 'persistent' } {
+  private _sessionOpts(): { session: string; surface: 'browser' | 'adapter'; idleTimeout?: number; contextId?: string; preferredContextId?: string; windowMode?: 'foreground' | 'background'; siteSession?: 'ephemeral' | 'persistent'; controlKey?: string; fenceToken?: number } {
     return {
       session: this.session,
       surface: this.surface,
@@ -71,6 +82,8 @@ export class Page extends BasePage {
       ...(this._idleTimeout != null && { idleTimeout: this._idleTimeout }),
       ...(this.windowMode && { windowMode: this.windowMode }),
       ...(this.siteSession && { siteSession: this.siteSession }),
+      ...(this.controlKey && { controlKey: this.controlKey }),
+      ...(this.fenceToken !== undefined && { fenceToken: this.fenceToken }),
     };
   }
 
@@ -85,6 +98,8 @@ export class Page extends BasePage {
       ...(this._idleTimeout != null && { idleTimeout: this._idleTimeout }),
       ...(this.windowMode && { windowMode: this.windowMode }),
       ...(this.siteSession && { siteSession: this.siteSession }),
+      ...(this.controlKey && { controlKey: this.controlKey }),
+      ...(this.fenceToken !== undefined && { fenceToken: this.fenceToken }),
     };
   }
 
@@ -208,6 +223,11 @@ export class Page extends BasePage {
     return Array.isArray(result) ? result : [];
   }
 
+  async findHostTabs(urlPrefix: string): Promise<BrowserHostTab[]> {
+    const result = await sendCommand('tabs', { op: 'find', urlPrefix, ...this._sessionOpts() });
+    return Array.isArray(result) ? result as BrowserHostTab[] : [];
+  }
+
   async newTab(url?: string): Promise<string | undefined> {
     const result = await sendCommandFull('tabs', {
       op: 'new',
@@ -218,19 +238,69 @@ export class Page extends BasePage {
     return result.page;
   }
 
-  async closeTab(target?: number | string): Promise<void> {
+  async newTabInHost(hostPage: string, url?: string): Promise<BrowserControlledTab> {
+    const result = await sendCommandFull('tabs', {
+      op: 'new',
+      hostPage,
+      active: false,
+      ...(url !== undefined && { url }),
+      ...this._sessionOpts(),
+    });
+    if (!result.page || !result.data || typeof result.data !== 'object') {
+      throw new Error('Browser Bridge did not return the created tab identity.');
+    }
+    const data = result.data as { url?: string; active?: boolean; placement?: string };
+    if (data.active !== false || data.placement !== 'borrowed-host-window') {
+      throw new Error('Browser Bridge returned an invalid borrowed-host tab result.');
+    }
+    this._lastUrl = null;
+    return {
+      page: result.page,
+      url: data.url,
+      active: false,
+      placement: 'borrowed-host-window',
+      idleDeadlineAt: result.idleDeadlineAt,
+    };
+  }
+
+  async closeTab(target?: number | string): Promise<BrowserTabCloseResult | void> {
     const params: Record<string, unknown> = { op: 'close', ...this._sessionOpts() };
     if (typeof target === 'number') params.index = target;
     else if (typeof target === 'string') params.page = target;
     else if (this._page !== undefined) params.page = this._page;
 
-    const result = await sendCommand('tabs', params) as { closed?: string } | null;
+    const result = await sendCommand('tabs', params) as ({ closed?: string } | BrowserTabCloseResult) | null;
+    if (result && 'outcome' in result) {
+      if (result.outcome !== 'failed' && (target === undefined || target === this._page)) {
+        this._page = undefined;
+        this._lastUrl = null;
+      }
+      return result;
+    }
     const closedPage = typeof result?.closed === 'string' ? result.closed : undefined;
 
     if ((closedPage && closedPage === this._page) || (!closedPage && (target === undefined || target === this._page))) {
       this._page = undefined;
       this._lastUrl = null;
     }
+  }
+
+  async activateControl(controlKey: string): Promise<BrowserControlFence> {
+    const result = await sendCommand('control', {
+      op: 'activate',
+      controlKey,
+      ...(this.contextId && { contextId: this.contextId }),
+      ...(this.preferredContextId && { preferredContextId: this.preferredContextId }),
+    });
+    if (
+      !result
+      || typeof result !== 'object'
+      || typeof (result as BrowserControlFence).controlKey !== 'string'
+      || typeof (result as BrowserControlFence).fenceToken !== 'number'
+    ) {
+      throw new Error('Browser Bridge did not return a control fence token.');
+    }
+    return result as BrowserControlFence;
   }
 
   async selectTab(target: number | string): Promise<void> {

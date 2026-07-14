@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "OpenCLI",
-  "version": "1.0.22",
+  "version": "1.0.22.1",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2/7FY2yb1SRnotnd9BHxZr7neCELlxfCQHa32AtpA1kTrSxjDxAYtNGE7h4hm/IxWyI18WqVCtdNAdb1ENkH98Ah+IwXW8nQFdc4ZriV4dJ05EruQ5uW76zaojgjgo18Dr3EaDt9aTG0sX5vVgq77+2bpqfUxiIdQeRiFnPL1b0Ctw++CbAQJMaXAU8FGs83EhcFI1Xw/bSNUXIGtSQlO4hUYTQXoDigy+coykLD3jPxynoHT2JK14MIkJtPHDxCxYS1hkNJ/fY14kXT5KCI3K1paxayrqgO+Kr3DtDxEc6sd8Jn+ap1xYEKBo2D9/jqHUwr/Jjd2EO7Q+d5EDe5/QIDAQAB",
   "description": "Browser automation bridge for the OpenCLI CLI tool. Executes commands in Chrome tab leases via a local daemon.",
   "permissions": [
     "debugger",
@@ -37,5 +38,5 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
-  "homepage_url": "https://github.com/jackwener/opencli"
+  "homepage_url": "https://github.com/FrankQDWang/OpenCLI"
 }

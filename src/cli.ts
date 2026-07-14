@@ -509,6 +509,20 @@ function getBrowserScope(session: string, contextId?: string): string {
   return contextId ? `${contextId}:${session}` : session;
 }
 
+function getBrowserControlOptions(): { controlKey?: string; fenceToken?: number } {
+  const controlKey = process.env.OPENCLI_CONTROL_KEY?.trim();
+  const rawFenceToken = process.env.OPENCLI_FENCE_TOKEN?.trim();
+  if (!controlKey && !rawFenceToken) return {};
+  if (!controlKey || !rawFenceToken || !/^\d+$/.test(rawFenceToken)) {
+    throw new Error('OPENCLI_CONTROL_KEY and a positive integer OPENCLI_FENCE_TOKEN must be set together.');
+  }
+  const fenceToken = Number(rawFenceToken);
+  if (!Number.isSafeInteger(fenceToken) || fenceToken <= 0) {
+    throw new Error('OPENCLI_FENCE_TOKEN must be a positive safe integer.');
+  }
+  return { controlKey, fenceToken };
+}
+
 async function resolveStoredBrowserTarget(page: import('./types.js').IPage, scope: string): Promise<string | undefined> {
   const defaultPage = loadBrowserTargetState(scope)?.defaultPage?.trim();
   if (!defaultPage) return undefined;
@@ -534,6 +548,7 @@ async function getBrowserPage(
     ...profileRouteParams(profileSelection),
     ...(idleTimeout && idleTimeout > 0 && { idleTimeout }),
     windowMode: opts.windowMode ?? getBrowserWindowMode(undefined, 'foreground'),
+    ...getBrowserControlOptions(),
   });
   const targetScope = getBrowserScope(session, profileSelection?.contextId);
   const resolvedTargetPage = targetPage
@@ -1103,10 +1118,32 @@ Examples:
       console.log(JSON.stringify(tabs, null, 2));
     }));
 
+  browserTab.command('find')
+    .argument('<urlPrefix>', 'HTTP(S) URL prefix for existing user tabs')
+    .description('Find matching existing user tabs without binding, activating, or navigating them')
+    .action(browserAction(async (page, urlPrefix: string) => {
+      if (!page.findHostTabs) throw new Error('This Browser Bridge does not support read-only host tab discovery');
+      console.log(JSON.stringify(await page.findHostTabs(urlPrefix), null, 2));
+    }));
+
   browserTab.command('new')
     .argument('[url]', 'Optional URL to open in the new tab')
+    .option('--host-page <targetId>', 'Create an inactive owned tab in the existing user window containing this page')
     .description('Create a new tab and print its target ID')
-    .action(browserAction(async (page, url?: string) => {
+    .action(browserAction(async (
+      page,
+      url?: string,
+      optsOrCommand?: { hostPage?: string } | Command,
+      maybeCommand?: Command,
+    ) => {
+      const command = optsOrCommand instanceof Command ? optsOrCommand : maybeCommand;
+      const hostPageRaw = getCommandOption(command, 'hostPage');
+      const hostPage = typeof hostPageRaw === 'string' && hostPageRaw.trim() ? hostPageRaw.trim() : undefined;
+      if (hostPage) {
+        if (!page.newTabInHost) throw new Error('This Browser Bridge does not support borrowed-host tab creation');
+        console.log(JSON.stringify(await page.newTabInHost(hostPage, url), null, 2));
+        return;
+      }
       if (!page.newTab) {
         throw new Error('This browser session does not support creating tabs');
       }
@@ -1141,19 +1178,27 @@ Examples:
       if (!resolvedTarget) {
         throw new Error('Target tab required. Pass it as an argument or --tab <targetId>.');
       }
-      const validatedTarget = await resolveBrowserTargetInSession(page, resolvedTarget, {
-        scope: getPageScope(page),
-        source: 'explicit',
-      });
-      if (!validatedTarget) {
-        throw new Error(`Target tab ${resolvedTarget} is not part of the current browser session.`);
-      }
-      await page.closeTab(validatedTarget);
+      const closeResult = await page.closeTab(resolvedTarget);
       const scope = getPageScope(page);
-      if (loadBrowserTargetState(scope)?.defaultPage === validatedTarget) {
+      if (
+        loadBrowserTargetState(scope)?.defaultPage === resolvedTarget
+        && (!closeResult || closeResult.outcome !== 'failed')
+      ) {
         saveBrowserTargetState(undefined, scope);
       }
-      console.log(JSON.stringify({ closed: validatedTarget }, null, 2));
+      console.log(JSON.stringify(closeResult ?? { closed: resolvedTarget }, null, 2));
+    }));
+
+  const browserControl = browser
+    .command('control')
+    .description('Allocate and inspect browser-control fencing state');
+
+  browserControl.command('activate')
+    .argument('<controlKey>', 'Opaque browser-control lane identity')
+    .description('Atomically allocate the next fencing token for a control lane')
+    .action(browserAction(async (page, controlKey: string) => {
+      if (!page.activateControl) throw new Error('This Browser Bridge does not support control fencing');
+      console.log(JSON.stringify(await page.activateControl(controlKey), null, 2));
     }));
 
   // ── Navigation ──

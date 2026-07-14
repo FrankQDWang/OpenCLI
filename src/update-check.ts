@@ -25,6 +25,7 @@ const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
 const EXTENSION_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7d
 const NPM_REGISTRY_URL = 'https://registry.npmjs.org/@jackwener/opencli/latest';
 const GITHUB_RELEASES_URL = 'https://api.github.com/repos/jackwener/OpenCLI/releases?per_page=20';
+const UPDATE_CHECKS_ENABLED = false;
 
 interface UpdateCache {
   // CLI npm fetch fields — present once `checkForUpdateBackground` has succeeded.
@@ -127,6 +128,7 @@ function buildUpdateNotices({ cliVersion, cache, now }: NoticeInputs): NoticeLin
  * Skipped during --get-completions to avoid polluting shell completion output.
  */
 export function registerUpdateNoticeOnExit(): void {
+  if (!UPDATE_CHECKS_ENABLED) return;
   if (isCI()) return;
   if (process.argv.includes('--get-completions')) return;
 
@@ -182,6 +184,7 @@ async function fetchLatestExtensionVersion(): Promise<string | undefined> {
  * Fully non-blocking — never awaited.
  */
 export function checkForUpdateBackground(): void {
+  if (!UPDATE_CHECKS_ENABLED) return;
   if (isCI()) return;
   if (_cache?.lastCheck && Date.now() - _cache.lastCheck < CHECK_INTERVAL_MS) return;
 

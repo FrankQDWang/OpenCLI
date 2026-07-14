@@ -118,7 +118,7 @@ function isPreConnectFetchError(err: unknown): boolean {
 
 export interface DaemonCommand {
   id: string;
-  action: 'exec' | 'navigate' | 'tabs' | 'cookies' | 'screenshot' | 'close-window' | 'set-file-input' | 'insert-text' | 'bind' | 'network-capture-start' | 'network-capture-read' | 'wait-download' | 'cdp' | 'frames';
+  action: 'exec' | 'navigate' | 'tabs' | 'cookies' | 'screenshot' | 'close-window' | 'set-file-input' | 'insert-text' | 'bind' | 'network-capture-start' | 'network-capture-read' | 'wait-download' | 'cdp' | 'frames' | 'control';
   /** Target page identity (targetId). Cross-layer contract with the extension. */
   page?: string;
   code?: string;
@@ -129,6 +129,11 @@ export interface DaemonCommand {
   url?: string;
   op?: string;
   index?: number;
+  urlPrefix?: string;
+  hostPage?: string;
+  active?: boolean;
+  controlKey?: string;
+  fenceToken?: number;
   domain?: string;
   format?: 'png' | 'jpeg';
   quality?: number;
@@ -188,6 +193,7 @@ export interface DaemonResult {
   errorHint?: string;
   /** Page identity (targetId) — present on page-scoped command responses */
   page?: string;
+  idleDeadlineAt?: number;
 }
 
 export class BrowserCommandError extends Error {
@@ -383,9 +389,9 @@ export async function sendCommand(
 export async function sendCommandFull(
   action: DaemonCommand['action'],
   params: Omit<DaemonCommand, 'id' | 'action'> = {},
-): Promise<{ data: unknown; page?: string }> {
+): Promise<{ data: unknown; page?: string; idleDeadlineAt?: number }> {
   const result = await sendCommandRaw(action, params);
-  return { data: result.data, page: result.page };
+  return { data: result.data, page: result.page, idleDeadlineAt: result.idleDeadlineAt };
 }
 
 export async function bindTab(session: string, opts: { contextId?: string } = {}): Promise<unknown> {
