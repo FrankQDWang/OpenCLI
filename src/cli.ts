@@ -479,6 +479,9 @@ async function resolveBrowserTargetInSession(
   try {
     tabs = await page.tabs();
   } catch (err) {
+    if (err instanceof BrowserCommandError && err.code === 'stale_control_fence') {
+      throw err;
+    }
     if (opts.source === 'saved') {
       saveBrowserTargetState(undefined, opts.scope);
       return undefined;
@@ -1015,7 +1018,7 @@ Examples:
   }
 
   function logBrowserCommandError(err: BrowserCommandError): void {
-    log.error(err.message);
+    log.error(err.code ? `[${err.code}] ${err.message}` : err.message);
     if (err.hint) log.error(`Hint: ${err.hint}`);
   }
 
