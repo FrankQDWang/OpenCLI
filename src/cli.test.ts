@@ -1379,6 +1379,35 @@ describe('browser tab targeting commands', () => {
     expect(stderrSpy.mock.calls.flat().join('\n')).toContain('Target tab tab-stale is not part of the current browser session');
   });
 
+  it('preserves a stale control fence error while validating an explicit tab', async () => {
+    browserState.page = {
+      setActivePage: vi.fn(),
+      getActivePage: vi.fn(),
+      tabs: vi.fn().mockRejectedValue(
+        new BrowserCommandError('Fence token 1 is not current.', 'stale_control_fence'),
+      ),
+      evaluate: vi.fn(),
+    } as unknown as IPage;
+
+    const program = createProgram('', '');
+    await program.parseAsync([
+      'node',
+      'opencli',
+      'browser',
+      '--session',
+      'test',
+      'eval',
+      '--tab',
+      'tab-stale',
+      'document.title',
+    ]);
+
+    expect(lastJsonLog().error.code).toBe('stale_control_fence');
+    expect(stderrSpy.mock.calls.flat().join('\n')).toContain('[stale_control_fence]');
+    expect(browserState.page?.setActivePage).not.toHaveBeenCalled();
+    expect(browserState.page?.evaluate).not.toHaveBeenCalled();
+  });
+
   it('lists tabs with target IDs via browser tab list', async () => {
     const program = createProgram('', '');
 
