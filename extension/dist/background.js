@@ -735,6 +735,7 @@ async function executeWithJournal(cmd, execute) {
   }
 }
 
+var define_OPENCLI_BRIDGE_IDENTITY_default = { implementation: "seektalent-opencli", bridgeBuildId: "seektalent-opencli-1.8.6+prototype.1", protocolVersion: { major: 1, minor: 0 }, capabilities: ["control-fence.v1", "tab.close-verified.v1", "tab.create-in-existing-window.v1", "tab.find.v1", "tab.idle-deadline.v1"] };
 let ws = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
@@ -862,7 +863,11 @@ async function connectAttempt() {
       type: "hello",
       contextId: currentContextId,
       version: chrome.runtime.getManifest().version,
-      compatRange: ">=1.7.0"
+      compatRange: ">=1.7.0",
+      implementation: define_OPENCLI_BRIDGE_IDENTITY_default.implementation,
+      bridgeBuildId: define_OPENCLI_BRIDGE_IDENTITY_default.bridgeBuildId,
+      protocolVersion: define_OPENCLI_BRIDGE_IDENTITY_default.protocolVersion,
+      capabilities: define_OPENCLI_BRIDGE_IDENTITY_default.capabilities
     });
     startWsKeepalive(thisWs);
   };
@@ -928,6 +933,7 @@ const IDLE_TIMEOUT_DEFAULT = 3e4;
 const IDLE_TIMEOUT_INTERACTIVE = 6e5;
 const IDLE_TIMEOUT_NONE = -1;
 const REGISTRY_KEY = "opencli_target_lease_registry_v2";
+const CONTROL_FENCE_REGISTRY_KEY = "opencli_control_fences_v1";
 const LEASE_IDLE_ALARM_PREFIX = "opencli:lease-idle:";
 const CONTAINER_TAB_GROUP_TITLE = {
   interactive: "OpenCLI Browser",
@@ -1024,12 +1030,14 @@ function withLeaseMutation(fn) {
 }
 function makeSession(key, session) {
   const ownership = session.owned ? "owned" : "borrowed";
+  const windowOwnership = session.windowOwnership ?? (session.owned ? "owned" : "borrowed");
   return {
     ...session,
     contextId: currentContextId,
     ownership,
+    windowOwnership,
     lifecycle: getLeaseLifecycle(key, session.kind),
-    windowRole: getWindowRole(key, ownership)
+    windowRole: getWindowRole(key, windowOwnership)
   };
 }
 function emptyRegistry() {
@@ -1082,6 +1090,80 @@ async function writeRegistry(registry) {
   } catch {
   }
 }
+let controlFences = null;
+let controlFenceMutationQueue = Promise.resolve();
+function normalizeControlKey(value) {
+  const controlKey = typeof value === "string" ? value.trim() : "";
+  if (!controlKey || controlKey.length > 256) {
+    throw new CommandFailure("control_key_invalid", "controlKey must be a non-empty string of at most 256 characters.");
+  }
+  return controlKey;
+}
+async function loadControlFences() {
+  if (controlFences) return controlFences;
+  const next = /* @__PURE__ */ new Map();
+  try {
+    const local = chrome.storage?.local;
+    if (!local) return next;
+    const raw = await local.get(CONTROL_FENCE_REGISTRY_KEY);
+    const stored = raw?.[CONTROL_FENCE_REGISTRY_KEY];
+    if (stored && typeof stored === "object") {
+      for (const [key, value] of Object.entries(stored)) {
+        if (Number.isSafeInteger(value) && value > 0) next.set(key, value);
+      }
+    }
+  } catch {
+  }
+  controlFences = next;
+  return next;
+}
+async function persistControlFences(fences) {
+  await chrome.storage?.local?.set({ [CONTROL_FENCE_REGISTRY_KEY]: Object.fromEntries(fences) });
+}
+function withControlFenceMutation(fn) {
+  const run = controlFenceMutationQueue.then(fn, fn);
+  controlFenceMutationQueue = run.then(() => void 0, () => void 0);
+  return run;
+}
+async function activateControlFence(rawControlKey) {
+  const controlKey = normalizeControlKey(rawControlKey);
+  return withControlFenceMutation(async () => {
+    const fences = await loadControlFences();
+    const current = fences.get(controlKey) ?? 0;
+    if (current >= Number.MAX_SAFE_INTEGER) {
+      throw new CommandFailure("control_fence_exhausted", `No fence tokens remain for controlKey "${controlKey}".`);
+    }
+    const fenceToken = current + 1;
+    fences.set(controlKey, fenceToken);
+    try {
+      await persistControlFences(fences);
+    } catch (err) {
+      if (current === 0) fences.delete(controlKey);
+      else fences.set(controlKey, current);
+      throw new CommandFailure(
+        "control_fence_persist_failed",
+        `Failed to persist the next fence token: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    return { controlKey, fenceToken };
+  });
+}
+async function assertControlFence(cmd) {
+  const hasControlKey = cmd.controlKey !== void 0;
+  const hasFenceToken = cmd.fenceToken !== void 0;
+  if (!hasControlKey && !hasFenceToken) return;
+  const controlKey = normalizeControlKey(cmd.controlKey);
+  if (!Number.isSafeInteger(cmd.fenceToken) || cmd.fenceToken <= 0) {
+    throw new CommandFailure("control_fence_invalid", "fenceToken must be a positive safe integer.");
+  }
+  const current = (await loadControlFences()).get(controlKey);
+  if (current !== cmd.fenceToken) {
+    throw new CommandFailure(
+      "stale_control_fence",
+      `Fence token ${cmd.fenceToken} is not current for controlKey "${controlKey}".`
+    );
+  }
+}
 async function persistRuntimeState() {
   const leases = {};
   for (const [leaseKey, session] of automationSessions.entries()) {
@@ -1094,6 +1176,7 @@ async function persistRuntimeState() {
       preferredTabId: session.preferredTabId,
       contextId: session.contextId,
       ownership: session.ownership,
+      windowOwnership: session.windowOwnership,
       lifecycle: session.lifecycle,
       windowRole: session.windowRole,
       idleDeadlineAt: session.idleDeadlineAt,
@@ -1489,6 +1572,86 @@ async function createOwnedTabLeaseUnlocked(leaseKey, initialUrl) {
   resetWindowIdleTimer(leaseKey);
   return { tabId, tab };
 }
+function tabIsOwned(tabId) {
+  return [...automationSessions.values()].some((session) => session.owned && session.preferredTabId === tabId);
+}
+function matchesHttpUrlPrefix(url, prefix) {
+  try {
+    return new URL(url).href.startsWith(prefix);
+  } catch {
+    return false;
+  }
+}
+async function findHostTabs(urlPrefix) {
+  let normalizedPrefix;
+  try {
+    const parsed = new URL(urlPrefix);
+    if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error("unsafe URL");
+    normalizedPrefix = parsed.href;
+  } catch {
+    throw new CommandFailure("host_url_prefix_invalid", "urlPrefix must start with http:// or https://.");
+  }
+  const tabs = await chrome.tabs.query({});
+  const matches = tabs.filter((tab) => tab.id !== void 0 && !tabIsOwned(tab.id) && typeof tab.url === "string" && matchesHttpUrlPrefix(tab.url, normalizedPrefix) && isSafeNavigationUrl(tab.url));
+  return Promise.all(matches.map(async (tab) => {
+    const chromeWindow = await chrome.windows.get(tab.windowId);
+    return {
+      page: await resolveTargetId(tab.id),
+      url: tab.url,
+      title: tab.title,
+      active: !!tab.active,
+      windowId: tab.windowId,
+      windowFocused: !!chromeWindow.focused
+    };
+  }));
+}
+async function createBorrowedHostTabLease(leaseKey, hostPage, initialUrl) {
+  if (automationSessions.has(leaseKey)) {
+    throw new CommandFailure(
+      "session_already_has_tab",
+      "A borrowed-host session owns exactly one tab. Use a new session for each new tab."
+    );
+  }
+  const targetUrl = initialUrl ?? BLANK_PAGE;
+  if (targetUrl !== BLANK_PAGE && !isSafeNavigationUrl(targetUrl)) {
+    throw new CommandFailure("tab_url_invalid", "The new tab URL must start with http:// or https://.");
+  }
+  let hostTabId;
+  try {
+    hostTabId = await resolveTabId$1(hostPage);
+  } catch {
+    throw new CommandFailure("host_page_missing", `Host page "${hostPage}" no longer exists.`);
+  }
+  if (tabIsOwned(hostTabId)) {
+    throw new CommandFailure("host_page_owned", "hostPage must identify an existing user tab, not an OpenCLI-owned tab.");
+  }
+  let hostTab;
+  try {
+    hostTab = await chrome.tabs.get(hostTabId);
+  } catch {
+    throw new CommandFailure("host_page_missing", `Host page "${hostPage}" no longer exists.`);
+  }
+  if (!isSafeNavigationUrl(hostTab.url ?? "")) {
+    throw new CommandFailure("host_page_not_web", "hostPage must be an existing http(s) user tab.");
+  }
+  const tab = await chrome.tabs.create({
+    windowId: hostTab.windowId,
+    url: targetUrl,
+    active: false
+  });
+  if (!tab.id) throw new CommandFailure("tab_create_failed", "Chrome did not return an id for the new tab.");
+  setLeaseSession(leaseKey, {
+    session: getSessionFromKey(leaseKey),
+    surface: getSurfaceFromKey(leaseKey),
+    kind: "owned",
+    windowId: tab.windowId,
+    owned: true,
+    windowOwnership: "borrowed",
+    preferredTabId: tab.id
+  });
+  resetWindowIdleTimer(leaseKey);
+  return { tabId: tab.id, tab };
+}
 async function getAutomationWindow(leaseKey, initialUrl) {
   const existing = automationSessions.get(leaseKey);
   if (existing) {
@@ -1497,6 +1660,12 @@ async function getAutomationWindow(leaseKey, initialUrl) {
         "bound_window_operation_blocked",
         `Session "${existing.session}" is bound to a user tab and does not own an OpenCLI tab lease.`,
         "Use page commands on the bound tab, or unbind the session first."
+      );
+    }
+    if (existing.windowOwnership === "borrowed") {
+      throw new CommandFailure(
+        "session_already_has_tab",
+        "A borrowed-host session owns exactly one tab. Use a new session for each new tab."
       );
     }
     try {
@@ -1523,6 +1692,14 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
   }
   for (const [leaseKey, session] of automationSessions.entries()) {
     if (session.windowId === windowId) {
+      if (session.windowOwnership === "borrowed" && session.preferredTabId !== null) {
+        try {
+          const tab = await chrome.tabs.get(session.preferredTabId);
+          session.windowId = tab.windowId;
+          continue;
+        } catch {
+        }
+      }
       console.log(`[opencli] ${session.surface} container closed (session=${session.session})`);
       if (session.idleTimer) clearTimeout(session.idleTimer);
       automationSessions.delete(leaseKey);
@@ -1614,7 +1791,20 @@ async function fetchDaemonVersion() {
   }
 }
 async function handleCommand(cmd) {
-  const session = getSessionName(cmd.session);
+  if (cmd.action === "control") {
+    try {
+      return await handleControl(cmd);
+    } catch (err) {
+      return errorResult(cmd.id, err);
+    }
+  }
+  let session;
+  try {
+    session = getSessionName(cmd.session);
+    if (!(cmd.action === "tabs" && cmd.op === "close")) await assertControlFence(cmd);
+  } catch (err) {
+    return errorResult(cmd.id, err);
+  }
   const surface = getCommandSurface(cmd);
   const leaseKey = getLeaseKey(session, surface);
   if (cmd.windowMode === "foreground" || cmd.windowMode === "background") {
@@ -1628,46 +1818,52 @@ async function handleCommand(cmd) {
   }
   resetWindowIdleTimer(leaseKey);
   activeCommandCounts.set(leaseKey, (activeCommandCounts.get(leaseKey) ?? 0) + 1);
+  let result;
   try {
-    switch (cmd.action) {
-      case "exec":
-        return await handleExec(cmd, leaseKey);
-      case "navigate":
-        return await handleNavigate(cmd, leaseKey);
-      case "tabs":
-        return await handleTabs(cmd, leaseKey);
-      case "cookies":
-        return await handleCookies(cmd);
-      case "screenshot":
-        return await handleScreenshot(cmd, leaseKey);
-      case "close-window":
-        return await handleCloseWindow(cmd, leaseKey);
-      case "cdp":
-        return await handleCdp(cmd, leaseKey);
-      case "set-file-input":
-        return await handleSetFileInput(cmd, leaseKey);
-      case "insert-text":
-        return await handleInsertText(cmd, leaseKey);
-      case "bind":
-        return await handleBind(cmd, leaseKey);
-      case "network-capture-start":
-        return await handleNetworkCaptureStart(cmd, leaseKey);
-      case "network-capture-read":
-        return await handleNetworkCaptureRead(cmd, leaseKey);
-      case "wait-download":
-        return await handleWaitDownload(cmd);
-      case "frames":
-        return await handleFrames(cmd, leaseKey);
-      default:
-        return { id: cmd.id, ok: false, error: `Unknown action: ${cmd.action}` };
-    }
+    result = await dispatchCommand(cmd, leaseKey);
   } catch (err) {
-    return errorResult(cmd.id, err);
+    result = errorResult(cmd.id, err);
   } finally {
     const remaining = (activeCommandCounts.get(leaseKey) ?? 1) - 1;
     if (remaining <= 0) activeCommandCounts.delete(leaseKey);
     else activeCommandCounts.set(leaseKey, remaining);
     resetWindowIdleTimer(leaseKey);
+  }
+  const idleDeadlineAt = automationSessions.get(leaseKey)?.idleDeadlineAt;
+  return idleDeadlineAt === void 0 ? result : { ...result, idleDeadlineAt };
+}
+async function dispatchCommand(cmd, leaseKey) {
+  switch (cmd.action) {
+    case "exec":
+      return handleExec(cmd, leaseKey);
+    case "navigate":
+      return handleNavigate(cmd, leaseKey);
+    case "tabs":
+      return handleTabs(cmd, leaseKey);
+    case "cookies":
+      return handleCookies(cmd);
+    case "screenshot":
+      return handleScreenshot(cmd, leaseKey);
+    case "close-window":
+      return handleCloseWindow(cmd, leaseKey);
+    case "cdp":
+      return handleCdp(cmd, leaseKey);
+    case "set-file-input":
+      return handleSetFileInput(cmd, leaseKey);
+    case "insert-text":
+      return handleInsertText(cmd, leaseKey);
+    case "bind":
+      return handleBind(cmd, leaseKey);
+    case "network-capture-start":
+      return handleNetworkCaptureStart(cmd, leaseKey);
+    case "network-capture-read":
+      return handleNetworkCaptureRead(cmd, leaseKey);
+    case "wait-download":
+      return handleWaitDownload(cmd);
+    case "frames":
+      return handleFrames(cmd, leaseKey);
+    default:
+      return { id: cmd.id, ok: false, error: `Unknown action: ${cmd.action}` };
   }
 }
 const BLANK_PAGE = "about:blank";
@@ -1677,6 +1873,12 @@ function isDebuggableUrl(url) {
 }
 function isSafeNavigationUrl(url) {
   return url.startsWith("http://") || url.startsWith("https://");
+}
+async function handleControl(cmd) {
+  if (cmd.op !== "activate") {
+    return { id: cmd.id, ok: false, error: `Unknown control op: ${cmd.op}` };
+  }
+  return { id: cmd.id, ok: true, data: await activateControlFence(cmd.controlKey) };
 }
 function normalizeUrlForComparison(url) {
   if (!url) return "";
@@ -1748,7 +1950,13 @@ async function resolveTab(tabId, leaseKey, initialUrl) {
       const tab = await chrome.tabs.get(tabId);
       const session = existingSession;
       const matchesSession = session ? session.preferredTabId !== null ? session.preferredTabId === tabId : tab.windowId === session.windowId : false;
-      if (isDebuggableUrl(tab.url) && matchesSession) return { tabId, tab };
+      if (isDebuggableUrl(tab.url) && matchesSession) {
+        if (session?.windowOwnership === "borrowed" && session.windowId !== tab.windowId) {
+          session.windowId = tab.windowId;
+          void persistRuntimeState();
+        }
+        return { tabId, tab };
+      }
       if (session && !session.owned) {
         throw new CommandFailure(
           matchesSession ? "bound_tab_not_debuggable" : "bound_tab_mismatch",
@@ -1780,6 +1988,13 @@ async function resolveTab(tabId, leaseKey, initialUrl) {
           'Run "opencli browser bind" again, then retry the command.'
         );
       }
+      if (existingSession?.owned && existingSession.windowOwnership === "borrowed") {
+        await removeLeaseSession(leaseKey);
+        throw new CommandFailure(
+          "owned_tab_gone",
+          `Owned tab for session "${existingSession.session}" no longer exists.`
+        );
+      }
       console.warn(`[opencli] Tab ${tabId} no longer exists, re-resolving`);
     }
   }
@@ -1805,6 +2020,9 @@ async function resolveTab(tabId, leaseKey, initialUrl) {
           `Bound tab for session "${session.session}" no longer exists.`,
           'Run "opencli browser bind" again, then retry the command.'
         );
+      }
+      if (session.windowOwnership === "borrowed") {
+        throw new CommandFailure("owned_tab_gone", `Owned tab for session "${session.session}" no longer exists.`);
       }
       return createOwnedTabLease(leaseKey, initialUrl);
     }
@@ -1979,7 +2197,7 @@ async function handleNavigate(cmd, leaseKey) {
   });
   let tab = await chrome.tabs.get(tabId);
   const postNavigationSession = automationSessions.get(leaseKey);
-  if (postNavigationSession && tab.windowId !== postNavigationSession.windowId) {
+  if (postNavigationSession && postNavigationSession.windowOwnership === "owned" && tab.windowId !== postNavigationSession.windowId) {
     console.warn(`[opencli] Tab ${tabId} drifted to window ${tab.windowId} during navigation, moving back to ${postNavigationSession.windowId}`);
     try {
       await chrome.tabs.move(tabId, { windowId: postNavigationSession.windowId, index: -1 });
@@ -1992,7 +2210,7 @@ async function handleNavigate(cmd, leaseKey) {
 }
 async function handleTabs(cmd, leaseKey) {
   const session = automationSessions.get(leaseKey);
-  if (session && !session.owned && cmd.op !== "list") {
+  if (session && !session.owned && cmd.op !== "list" && cmd.op !== "find") {
     return {
       id: cmd.id,
       ok: false,
@@ -2002,6 +2220,21 @@ async function handleTabs(cmd, leaseKey) {
     };
   }
   switch (cmd.op) {
+    case "find": {
+      if (!cmd.urlPrefix) {
+        return { id: cmd.id, ok: false, errorCode: "host_url_prefix_required", error: "tabs find requires urlPrefix." };
+      }
+      const matches = await findHostTabs(cmd.urlPrefix);
+      if (matches.length === 0) {
+        return {
+          id: cmd.id,
+          ok: false,
+          errorCode: "host_tab_not_found",
+          error: `No existing user tab matches "${cmd.urlPrefix}".`
+        };
+      }
+      return { id: cmd.id, ok: true, data: matches };
+    }
     case "list": {
       const tabs = await listAutomationWebTabs(leaseKey);
       const data = await Promise.all(tabs.map(async (t, i) => {
@@ -2017,6 +2250,25 @@ async function handleTabs(cmd, leaseKey) {
     case "new": {
       if (cmd.url && !isSafeNavigationUrl(cmd.url)) {
         return { id: cmd.id, ok: false, error: "Blocked URL scheme -- only http:// and https:// are allowed" };
+      }
+      if (cmd.hostPage !== void 0) {
+        if (!cmd.hostPage.trim()) {
+          return { id: cmd.id, ok: false, errorCode: "host_page_required", error: "hostPage must be a non-empty page identity." };
+        }
+        if (cmd.active === true) {
+          return {
+            id: cmd.id,
+            ok: false,
+            errorCode: "borrowed_host_tab_must_be_inactive",
+            error: "Tabs created in a borrowed user window must be inactive."
+          };
+        }
+        const created = await createBorrowedHostTabLease(leaseKey, cmd.hostPage, cmd.url);
+        return pageScopedResult(cmd.id, created.tabId, {
+          url: created.tab?.url,
+          active: false,
+          placement: "borrowed-host-window"
+        });
       }
       if (!automationSessions.has(leaseKey)) {
         const created = await createOwnedTabLease(leaseKey, cmd.url);
@@ -2041,6 +2293,66 @@ async function handleTabs(cmd, leaseKey) {
       return pageScopedResult(cmd.id, tabId, { url: tab.url });
     }
     case "close": {
+      const ownedSession = automationSessions.get(leaseKey);
+      if (!ownedSession && cmd.page) {
+        try {
+          const existingTabId = await resolveTabId$1(cmd.page);
+          await chrome.tabs.get(existingTabId);
+          return {
+            id: cmd.id,
+            ok: true,
+            data: {
+              requested: cmd.page,
+              outcome: "failed",
+              verified: false,
+              errorCode: "owned_session_missing"
+            }
+          };
+        } catch {
+        }
+        return {
+          id: cmd.id,
+          ok: true,
+          data: { requested: cmd.page, outcome: "already_missing", verified: true, errorCode: null }
+        };
+      }
+      if (ownedSession?.owned && ownedSession.windowOwnership === "borrowed") {
+        if (cmd.index !== void 0) {
+          return {
+            id: cmd.id,
+            ok: false,
+            errorCode: "owned_tab_identity_required",
+            error: "Borrowed-host owned tabs must be closed by exact page identity, not tab index."
+          };
+        }
+        const tabId2 = ownedSession.preferredTabId;
+        if (tabId2 !== null && cmd.page) {
+          try {
+            const requestedTabId = await resolveTabId$1(cmd.page);
+            if (requestedTabId !== tabId2) {
+              return {
+                id: cmd.id,
+                ok: false,
+                errorCode: "owned_tab_mismatch",
+                error: "The requested page is not owned by this session."
+              };
+            }
+          } catch {
+            try {
+              await chrome.tabs.get(tabId2);
+              return {
+                id: cmd.id,
+                ok: false,
+                errorCode: "page_identity_unresolved",
+                error: "The requested page identity could not be resolved while the owned tab still exists."
+              };
+            } catch {
+            }
+          }
+        }
+        const requestedPage = cmd.page ?? (tabId2 === null ? void 0 : await resolveTargetId(tabId2).catch(() => void 0));
+        return { id: cmd.id, ok: true, data: await releaseLease(leaseKey, "tab close", requestedPage) };
+      }
       if (cmd.index !== void 0) {
         const tabs = await listAutomationWebTabs(leaseKey);
         const target = tabs[cmd.index];
@@ -2068,6 +2380,14 @@ async function handleTabs(cmd, leaseKey) {
       return { id: cmd.id, ok: true, data: { closed: closedPage } };
     }
     case "select": {
+      if (session?.owned && session.windowOwnership === "borrowed") {
+        return {
+          id: cmd.id,
+          ok: false,
+          errorCode: "borrowed_host_tab_activation_blocked",
+          error: "Borrowed-host owned tabs cannot be activated through OpenCLI."
+        };
+      }
       if (cmd.index === void 0 && cmd.page === void 0)
         return { id: cmd.id, ok: false, error: "Missing index or page" };
       const cmdTabId = await resolveCommandTabId(cmd);
@@ -2246,16 +2566,55 @@ async function handleWaitDownload(cmd) {
     return errorResult(cmd.id, err);
   }
 }
-async function releaseLease(leaseKey, reason = "released") {
+async function releaseBorrowedHostLease(leaseKey, session, reason, requestedPage) {
+  const tabId = session.preferredTabId;
+  const requested = requestedPage ?? (tabId === null ? null : await resolveTargetId(tabId).catch(() => null));
+  if (tabId === null) {
+    await removeLeaseSession(leaseKey);
+    return { requested, outcome: "already_missing", verified: true, errorCode: null };
+  }
+  try {
+    await chrome.tabs.get(tabId);
+  } catch {
+    evictTab(tabId);
+    await removeLeaseSession(leaseKey);
+    return { requested, outcome: "already_missing", verified: true, errorCode: null };
+  }
+  await safeDetach(tabId);
+  let removeError;
+  try {
+    await chrome.tabs.remove(tabId);
+  } catch (err) {
+    removeError = err;
+  }
+  try {
+    await chrome.tabs.get(tabId);
+  } catch {
+    evictTab(tabId);
+    await removeLeaseSession(leaseKey);
+    console.log(`[opencli] Closed borrowed-host owned tab ${tabId} (session=${session.session}, ${reason})`);
+    return { requested, outcome: "closed", verified: true, errorCode: null };
+  }
+  console.warn(
+    `[opencli] Failed to verify close for borrowed-host owned tab ${tabId}` + (removeError ? `: ${removeError instanceof Error ? removeError.message : String(removeError)}` : "")
+  );
+  resetWindowIdleTimer(leaseKey, Math.min(5e3, Math.max(1, getIdleTimeout(leaseKey))));
+  await persistRuntimeState();
+  return { requested, outcome: "failed", verified: false, errorCode: "tab_close_failed" };
+}
+async function releaseLease(leaseKey, reason = "released", requestedPage) {
   const session = automationSessions.get(leaseKey);
   if (!session) {
     sessionOverrides.delete(leaseKey);
     scheduleIdleAlarm(leaseKey, IDLE_TIMEOUT_NONE);
     await persistRuntimeState();
-    return;
+    return { requested: requestedPage ?? null, outcome: "already_missing", verified: true, errorCode: null };
   }
   if (session.idleTimer) clearTimeout(session.idleTimer);
   scheduleIdleAlarm(leaseKey, IDLE_TIMEOUT_NONE);
+  if (session.owned && session.windowOwnership === "borrowed") {
+    return releaseBorrowedHostLease(leaseKey, session, reason, requestedPage);
+  }
   if (session.owned) {
     const tabId = session.preferredTabId;
     if (tabId !== null) {
@@ -2290,6 +2649,12 @@ async function releaseLease(leaseKey, reason = "released") {
   automationSessions.delete(leaseKey);
   sessionOverrides.delete(leaseKey);
   await persistRuntimeState();
+  return {
+    requested: requestedPage ?? null,
+    outcome: "failed",
+    verified: false,
+    errorCode: "legacy_release_unverified"
+  };
 }
 async function reconcileTargetLeaseRegistry() {
   const registry = await readRegistry();
@@ -2322,6 +2687,7 @@ async function reconcileTargetLeaseRegistry() {
         kind: stored.kind === "bound" || stored.owned === false ? "bound" : "owned",
         windowId: tab.windowId,
         owned: stored.owned,
+        windowOwnership: stored.windowOwnership === "borrowed" || stored.windowRole === "borrowed-user" ? "borrowed" : "owned",
         preferredTabId: tabId
       });
       const timeout = getIdleTimeout(leaseKey);
@@ -2330,7 +2696,7 @@ async function reconcileTargetLeaseRegistry() {
         idleTimer: null,
         idleDeadlineAt: stored.idleDeadlineAt
       });
-      if (session.owned) {
+      if (session.owned && session.windowOwnership === "owned") {
         const role = getOwnedWindowRole(leaseKey);
         if (ownedContainers[role].windowId === null) ownedContainers[role].windowId = tab.windowId;
         const group = await ensureOwnedContainerGroup(role, tab.windowId, [tabId]);

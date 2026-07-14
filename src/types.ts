@@ -15,6 +15,35 @@ export interface BrowserCookie {
   expirationDate?: number;
 }
 
+export interface BrowserHostTab {
+  page: string;
+  url: string;
+  title?: string;
+  active: boolean;
+  windowId: number;
+  windowFocused: boolean;
+}
+
+export interface BrowserControlledTab {
+  page: string;
+  url?: string;
+  active: false;
+  placement: 'borrowed-host-window';
+  idleDeadlineAt?: number;
+}
+
+export interface BrowserTabCloseResult {
+  requested: string | null;
+  outcome: 'closed' | 'already_missing' | 'failed';
+  verified: boolean;
+  errorCode: string | null;
+}
+
+export interface BrowserControlFence {
+  controlKey: string;
+  fenceToken: number;
+}
+
 export interface SnapshotOptions {
   interactive?: boolean;
   compact?: boolean;
@@ -107,8 +136,11 @@ export interface IPage {
   wait(options: number | WaitOptions): Promise<void>;
   waitForDownload?(pattern?: string, timeoutMs?: number): Promise<BrowserDownloadWaitResult>;
   tabs(): Promise<any>;
-  closeTab?(target?: number | string): Promise<void>;
+  findHostTabs?(urlPrefix: string): Promise<BrowserHostTab[]>;
+  closeTab?(target?: number | string): Promise<BrowserTabCloseResult | void>;
   newTab?(url?: string): Promise<string | undefined>;
+  newTabInHost?(hostPage: string, url?: string): Promise<BrowserControlledTab>;
+  activateControl?(controlKey: string): Promise<BrowserControlFence>;
   selectTab(target: number | string): Promise<void>;
   networkRequests(includeStatic?: boolean): Promise<any>;
   consoleMessages(level?: string): Promise<any>;

@@ -20,7 +20,8 @@ export type Action =
   | 'network-capture-read'
   | 'wait-download'
   | 'cdp'
-  | 'frames';
+  | 'frames'
+  | 'control';
 
 export interface Command {
   /** Unique request ID */
@@ -39,10 +40,20 @@ export interface Command {
   siteSession?: 'ephemeral' | 'persistent';
   /** URL to navigate to (navigate action) */
   url?: string;
-  /** Sub-operation for tabs: list, new, close, select */
-  op?: 'list' | 'new' | 'close' | 'select';
+  /** Sub-operation for tabs or control. */
+  op?: 'list' | 'find' | 'new' | 'close' | 'select' | 'activate';
   /** Tab index for tabs select/close */
   index?: number;
+  /** Read-only URL prefix used by tabs find. */
+  urlPrefix?: string;
+  /** Existing user page used only as a host-window anchor for tabs new. */
+  hostPage?: string;
+  /** Whether a newly created tab should be active. Borrowed-host tabs require false. */
+  active?: boolean;
+  /** Opaque browser-control lane identity. */
+  controlKey?: string;
+  /** Monotonic token allocated by control activate. */
+  fenceToken?: number;
   /** Cookie domain filter */
   domain?: string;
   /** Screenshot format: png (default) or jpeg */
@@ -114,6 +125,8 @@ export interface Result {
   errorHint?: string;
   /** Page identity (targetId) — present only on page-scoped command responses */
   page?: string;
+  /** Absolute idle deadline after the command completes. */
+  idleDeadlineAt?: number;
 }
 
 /** Default daemon port */

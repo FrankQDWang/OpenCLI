@@ -409,6 +409,95 @@ describe('Page active target tracking', () => {
     }));
   });
 
+  it('finds user host tabs without changing the active page binding', async () => {
+    sendCommandMock.mockResolvedValueOnce([{
+      page: 'host-1',
+      url: 'https://user.example/',
+      active: true,
+      windowId: 2,
+      windowFocused: true,
+    }]);
+
+    const page = new Page('host-probe');
+    const hosts = await page.findHostTabs('https://user.example/');
+
+    expect(hosts).toEqual([expect.objectContaining({ page: 'host-1', windowId: 2 })]);
+    expect(page.getActivePage()).toBeUndefined();
+    expect(sendCommandMock).toHaveBeenCalledWith('tabs', expect.objectContaining({
+      op: 'find',
+      urlPrefix: 'https://user.example/',
+      session: 'host-probe',
+    }));
+  });
+
+  it('creates an inactive tab in a host window and preserves the returned idle deadline', async () => {
+    sendCommandFullMock.mockResolvedValueOnce({
+      data: {
+        url: 'https://controlled.example/',
+        active: false,
+        placement: 'borrowed-host-window',
+      },
+      page: 'controlled-1',
+      idleDeadlineAt: 123456,
+    });
+
+    const page = new Page('controlled-session', 60, undefined, undefined, 'adapter');
+    const created = await page.newTabInHost('host-1', 'https://controlled.example/');
+
+    expect(created).toEqual({
+      page: 'controlled-1',
+      url: 'https://controlled.example/',
+      active: false,
+      placement: 'borrowed-host-window',
+      idleDeadlineAt: 123456,
+    });
+    expect(page.getActivePage()).toBeUndefined();
+    expect(sendCommandFullMock).toHaveBeenCalledWith('tabs', expect.objectContaining({
+      op: 'new',
+      hostPage: 'host-1',
+      active: false,
+      idleTimeout: 60,
+      session: 'controlled-session',
+      surface: 'adapter',
+    }));
+  });
+
+  it('includes the current control fence on page commands', async () => {
+    sendCommandMock.mockResolvedValueOnce('ok');
+
+    const page = new Page(
+      'controlled-session',
+      60,
+      undefined,
+      undefined,
+      'adapter',
+      undefined,
+      undefined,
+      'lane-1',
+      7,
+    );
+    await page.evaluate('1 + 1');
+
+    expect(sendCommandMock).toHaveBeenCalledWith('exec', expect.objectContaining({
+      controlKey: 'lane-1',
+      fenceToken: 7,
+    }));
+  });
+
+  it('returns the extension control fence allocation', async () => {
+    sendCommandMock.mockResolvedValueOnce({ controlKey: 'lane-1', fenceToken: 3 });
+
+    const page = new Page('scope');
+    await expect(page.activateControl('lane-1')).resolves.toEqual({
+      controlKey: 'lane-1',
+      fenceToken: 3,
+    });
+    expect(sendCommandMock).toHaveBeenCalledWith('control', {
+      op: 'activate',
+      controlKey: 'lane-1',
+    });
+  });
+
   it('allows the caller to adopt a new tab explicitly after creation', async () => {
     sendCommandFullMock.mockResolvedValueOnce({
       data: { url: 'https://second.example' },
@@ -443,6 +532,23 @@ describe('Page active target tracking', () => {
       surface: 'browser',
       page: 'page-2',
     }));
+  });
+
+  it('returns a structured verified close result', async () => {
+    sendCommandMock.mockResolvedValueOnce({
+      requested: 'page-2',
+      outcome: 'closed',
+      verified: true,
+      errorCode: null,
+    });
+
+    const page = new Page('default');
+    await expect(page.closeTab('page-2')).resolves.toEqual({
+      requested: 'page-2',
+      outcome: 'closed',
+      verified: true,
+      errorCode: null,
+    });
   });
 
   it('clears the active page binding when closing the selected tab by numeric index', async () => {

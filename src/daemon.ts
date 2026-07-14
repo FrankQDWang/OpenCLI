@@ -28,6 +28,7 @@ import { log } from './logger.js';
 import { PKG_VERSION } from './version.js';
 import { DEFAULT_CONTEXT_ID } from './browser/profile.js';
 import { recordExtensionVersion } from './update-check.js';
+import { BRIDGE_IDENTITY, type BridgeIdentity } from './bridge-identity.js';
 import {
   PROFILE_DISCONNECTED_HINT,
   buildCommandDispatchFailure,
@@ -50,6 +51,10 @@ type ExtensionProfileConnection = {
   ws: WebSocket;
   extensionVersion: string | null;
   extensionCompatRange: string | null;
+  implementation: string | null;
+  bridgeBuildId: string | null;
+  protocolVersion: BridgeIdentity['protocolVersion'] | null;
+  capabilities: string[];
   lastSeenAt: number;
 };
 
@@ -159,6 +164,10 @@ function registerExtensionConnection(ws: WebSocket, rawContextId: unknown): Exte
     ws,
     extensionVersion: current?.ws === ws ? current.extensionVersion : null,
     extensionCompatRange: current?.ws === ws ? current.extensionCompatRange : null,
+    implementation: current?.ws === ws ? current.implementation : null,
+    bridgeBuildId: current?.ws === ws ? current.bridgeBuildId : null,
+    protocolVersion: current?.ws === ws ? current.protocolVersion : null,
+    capabilities: current?.ws === ws ? current.capabilities : [],
     lastSeenAt: Date.now(),
   };
   extensionProfiles.set(contextId, connection);
@@ -270,6 +279,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       extensionConnected: true,
       extensionVersion: profile.extensionVersion ?? undefined,
       extensionCompatRange: profile.extensionCompatRange ?? undefined,
+      implementation: profile.implementation ?? undefined,
+      bridgeBuildId: profile.bridgeBuildId ?? undefined,
+      protocolVersion: profile.protocolVersion ?? undefined,
+      capabilities: profile.capabilities,
       pending: [...pending.values()].filter((entry) => entry.contextId === profile.contextId).length,
       lastSeenAt: profile.lastSeenAt,
     }));
@@ -278,9 +291,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       pid: process.pid,
       uptime,
       daemonVersion: PKG_VERSION,
+      implementation: BRIDGE_IDENTITY.implementation,
+      bridgeBuildId: BRIDGE_IDENTITY.bridgeBuildId,
+      protocolVersion: BRIDGE_IDENTITY.protocolVersion,
+      capabilities: BRIDGE_IDENTITY.capabilities,
       extensionConnected: !!route.connection,
       extensionVersion: route.connection?.extensionVersion ?? undefined,
       extensionCompatRange: route.connection?.extensionCompatRange ?? undefined,
+      extensionImplementation: route.connection?.implementation ?? undefined,
+      extensionBridgeBuildId: route.connection?.bridgeBuildId ?? undefined,
+      extensionProtocolVersion: route.connection?.protocolVersion ?? undefined,
+      extensionCapabilities: route.connection?.capabilities ?? [],
       contextId: route.connection?.contextId ?? requestedContextId,
       profileRequired: route.errorCode === 'profile_required',
       profileDisconnected: route.errorCode === 'profile_disconnected',
@@ -458,6 +479,16 @@ wss.on('connection', (ws: WebSocket) => {
         const connection = registerExtensionConnection(ws, msg.contextId);
         connection.extensionVersion = typeof msg.version === 'string' ? msg.version : null;
         connection.extensionCompatRange = typeof msg.compatRange === 'string' ? msg.compatRange : null;
+        connection.implementation = typeof msg.implementation === 'string' ? msg.implementation : null;
+        connection.bridgeBuildId = typeof msg.bridgeBuildId === 'string' ? msg.bridgeBuildId : null;
+        connection.protocolVersion = msg.protocolVersion
+          && typeof msg.protocolVersion.major === 'number'
+          && typeof msg.protocolVersion.minor === 'number'
+          ? { major: msg.protocolVersion.major, minor: msg.protocolVersion.minor }
+          : null;
+        connection.capabilities = Array.isArray(msg.capabilities)
+          ? msg.capabilities.filter((capability: unknown): capability is string => typeof capability === 'string')
+          : [];
         connection.lastSeenAt = Date.now();
         if (connection.extensionVersion) recordExtensionVersion(connection.extensionVersion);
         log.info(`[daemon] Extension profile connected: ${connection.contextId}`);

@@ -616,6 +616,286 @@ describe('background tab isolation', () => {
     expect(create).toHaveBeenCalledWith({ windowId: 1, url: 'https://new.example', active: true });
   });
 
+  it('finds matching user tabs without binding or changing Chrome state', async () => {
+    const { chrome, create, update } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+
+    const mod = await import('./background');
+    const result = await mod.__test__.handleCommand({
+      id: 'find-host',
+      action: 'tabs',
+      op: 'find',
+      urlPrefix: 'https://user.example',
+      session: 'host-probe',
+      surface: 'adapter',
+    });
+
+    expect(result).toEqual({
+      id: 'find-host',
+      ok: true,
+      data: [{
+        page: 'target-2',
+        url: 'https://user.example',
+        title: 'user',
+        active: true,
+        windowId: 2,
+        windowFocused: true,
+      }],
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(chrome.windows.create).not.toHaveBeenCalled();
+    expect(mod.__test__.getSession(adapterKey('host-probe'))).toBeNull();
+  });
+
+  it('fails without creating a window when no user host tab matches', async () => {
+    const { chrome, create, update } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+
+    const mod = await import('./background');
+    const result = await mod.__test__.handleCommand({
+      id: 'find-missing-host',
+      action: 'tabs',
+      op: 'find',
+      urlPrefix: 'https://missing.example/',
+      session: 'host-probe',
+      surface: 'adapter',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: false,
+      errorCode: 'host_tab_not_found',
+    }));
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(chrome.windows.create).not.toHaveBeenCalled();
+  });
+
+  it('creates an inactive owned tab in the existing user window and returns its idle deadline', async () => {
+    const { chrome, create, tabs } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+
+    const mod = await import('./background');
+    const result = await mod.__test__.handleCommand({
+      id: 'new-in-user-window',
+      action: 'tabs',
+      op: 'new',
+      hostPage: 'target-2',
+      url: 'https://controlled.example/',
+      active: false,
+      idleTimeout: 60,
+      session: 'controlled-1',
+      surface: 'adapter',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      id: 'new-in-user-window',
+      ok: true,
+      page: 'target-10',
+      idleDeadlineAt: expect.any(Number),
+      data: {
+        url: 'https://controlled.example/',
+        active: false,
+        placement: 'borrowed-host-window',
+      },
+    }));
+    expect(create).toHaveBeenCalledWith({
+      windowId: 2,
+      url: 'https://controlled.example/',
+      active: false,
+    });
+    expect(chrome.windows.create).not.toHaveBeenCalled();
+    expect(tabs.find((tab) => tab.id === 2)).toEqual(expect.objectContaining({
+      url: 'https://user.example',
+      active: true,
+    }));
+    expect(mod.__test__.getSession(adapterKey('controlled-1'))).toEqual(expect.objectContaining({
+      owned: true,
+      windowOwnership: 'borrowed',
+      windowRole: 'borrowed-user',
+      windowId: 2,
+      preferredTabId: 10,
+    }));
+  });
+
+  it('really closes and verifies a borrowed-host owned tab without touching its user window', async () => {
+    const { chrome, tabs } = createChromeMock();
+    chrome.tabs.remove = vi.fn(async (tabId: number) => {
+      const index = tabs.findIndex((tab) => tab.id === tabId);
+      if (index === -1) throw new Error(`Unknown tab ${tabId}`);
+      tabs.splice(index, 1);
+    });
+    vi.stubGlobal('chrome', chrome);
+
+    const mod = await import('./background');
+    const created = await mod.__test__.handleCommand({
+      id: 'create-before-close',
+      action: 'tabs',
+      op: 'new',
+      hostPage: 'target-2',
+      url: 'https://controlled.example/',
+      idleTimeout: 60,
+      session: 'controlled-close',
+      surface: 'adapter',
+    });
+    const page = created.page!;
+
+    const closed = await mod.__test__.handleCommand({
+      id: 'verified-close',
+      action: 'tabs',
+      op: 'close',
+      page,
+      session: 'controlled-close',
+      surface: 'adapter',
+    });
+
+    expect(closed).toEqual({
+      id: 'verified-close',
+      ok: true,
+      data: { requested: page, outcome: 'closed', verified: true, errorCode: null },
+    });
+    expect(chrome.tabs.remove).toHaveBeenCalledWith(10);
+    expect(chrome.tabs.update).not.toHaveBeenCalledWith(10, expect.objectContaining({ url: 'about:blank' }));
+    expect(chrome.windows.remove).not.toHaveBeenCalled();
+    expect(tabs.find((tab) => tab.id === 2)).toBeDefined();
+    expect(mod.__test__.getSession(adapterKey('controlled-close'))).toBeNull();
+
+    const repeated = await mod.__test__.handleCommand({
+      id: 'repeated-close',
+      action: 'tabs',
+      op: 'close',
+      page,
+      session: 'controlled-close',
+      surface: 'adapter',
+    });
+    expect(repeated).toEqual({
+      id: 'repeated-close',
+      ok: true,
+      data: { requested: page, outcome: 'already_missing', verified: true, errorCode: null },
+    });
+  });
+
+  it('does not claim success or close a live tab when ownership evidence is missing', async () => {
+    const { chrome } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+
+    const mod = await import('./background');
+    const result = await mod.__test__.handleCommand({
+      id: 'missing-ownership',
+      action: 'tabs',
+      op: 'close',
+      page: 'target-2',
+      session: 'unknown-session',
+      surface: 'adapter',
+    });
+
+    expect(result).toEqual({
+      id: 'missing-ownership',
+      ok: true,
+      data: {
+        requested: 'target-2',
+        outcome: 'failed',
+        verified: false,
+        errorCode: 'owned_session_missing',
+      },
+    });
+    expect(chrome.tabs.remove).not.toHaveBeenCalled();
+    expect(chrome.windows.remove).not.toHaveBeenCalled();
+  });
+
+  it('keeps ownership evidence when verified close fails', async () => {
+    const { chrome } = createChromeMock();
+    chrome.tabs.remove = vi.fn(async () => { throw new Error('remove blocked'); });
+    vi.stubGlobal('chrome', chrome);
+
+    const mod = await import('./background');
+    const created = await mod.__test__.handleCommand({
+      id: 'create-before-failed-close',
+      action: 'tabs',
+      op: 'new',
+      hostPage: 'target-2',
+      url: 'https://controlled.example/',
+      idleTimeout: 60,
+      session: 'controlled-failed-close',
+      surface: 'adapter',
+    });
+
+    const closed = await mod.__test__.handleCommand({
+      id: 'failed-close',
+      action: 'tabs',
+      op: 'close',
+      page: created.page,
+      session: 'controlled-failed-close',
+      surface: 'adapter',
+    });
+
+    expect(closed).toEqual(expect.objectContaining({
+      ok: true,
+      data: {
+        requested: created.page,
+        outcome: 'failed',
+        verified: false,
+        errorCode: 'tab_close_failed',
+      },
+      idleDeadlineAt: expect.any(Number),
+    }));
+    expect(mod.__test__.getSession(adapterKey('controlled-failed-close'))).toEqual(expect.objectContaining({
+      preferredTabId: 10,
+      windowOwnership: 'borrowed',
+    }));
+    expect(chrome.windows.remove).not.toHaveBeenCalled();
+  });
+
+  it('atomically advances control fences and rejects stale commands before touching tabs', async () => {
+    const { chrome, create, update } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+
+    const mod = await import('./background');
+    const first = await mod.__test__.handleCommand({
+      id: 'activate-1',
+      action: 'control',
+      op: 'activate',
+      controlKey: 'liepin-profile-1',
+    });
+    const second = await mod.__test__.handleCommand({
+      id: 'activate-2',
+      action: 'control',
+      op: 'activate',
+      controlKey: 'liepin-profile-1',
+    });
+
+    expect(first.data).toEqual({ controlKey: 'liepin-profile-1', fenceToken: 1 });
+    expect(second.data).toEqual({ controlKey: 'liepin-profile-1', fenceToken: 2 });
+
+    const stale = await mod.__test__.handleCommand({
+      id: 'stale-find',
+      action: 'tabs',
+      op: 'find',
+      urlPrefix: 'https://user.example',
+      controlKey: 'liepin-profile-1',
+      fenceToken: 1,
+      session: 'stale-scope',
+      surface: 'adapter',
+    });
+
+    expect(stale).toEqual(expect.objectContaining({ ok: false, errorCode: 'stale_control_fence' }));
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(chrome.windows.create).not.toHaveBeenCalled();
+
+    const current = await mod.__test__.handleCommand({
+      id: 'current-find',
+      action: 'tabs',
+      op: 'find',
+      urlPrefix: 'https://user.example',
+      controlKey: 'liepin-profile-1',
+      fenceToken: 2,
+      session: 'current-scope',
+      surface: 'adapter',
+    });
+    expect(current).toEqual(expect.objectContaining({ ok: true }));
+  });
+
   it('reuses the initial container tab for first tab-new lease instead of leaving a blank tab', async () => {
     const { chrome, create, update } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
@@ -748,6 +1028,34 @@ describe('background tab isolation', () => {
         contextId: 'abc123xy',
       }));
     });
+  });
+
+  it('announces the paired build identity and capabilities in extension hello', async () => {
+    const { chrome } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    vi.stubGlobal('__OPENCLI_COMPAT_RANGE__', '>=1.8.6 <1.9.0');
+    vi.stubGlobal('__OPENCLI_BRIDGE_IDENTITY__', {
+      implementation: 'seektalent-opencli',
+      bridgeBuildId: 'seektalent-opencli-1.8.6+test',
+      protocolVersion: { major: 1, minor: 0 },
+      capabilities: ['tab.find.v1', 'tab.create-in-existing-window.v1'],
+    });
+
+    await import('./background');
+    await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    socket.readyState = MockWebSocket.OPEN;
+    socket.onopen?.();
+
+    const hello = socket.sent.map((entry) => JSON.parse(entry)).find((entry) => entry.type === 'hello');
+    expect(hello).toEqual(expect.objectContaining({
+      type: 'hello',
+      implementation: 'seektalent-opencli',
+      bridgeBuildId: 'seektalent-opencli-1.8.6+test',
+      protocolVersion: { major: 1, minor: 0 },
+      capabilities: ['tab.find.v1', 'tab.create-in-existing-window.v1'],
+    }));
   });
 
   it('keeps the active daemon connection when a superseded WebSocket closes later', async () => {
@@ -1156,7 +1464,7 @@ describe('background tab isolation', () => {
     // SW restart and can dodge idle expiry indefinitely.
     expect(scheduledWhen).toBeLessThan(now + 15_000);
     expect(scheduledWhen).toBeGreaterThan(now + 1_000);
-    expect(mod.__test__.getSession(adapterKey('twitter')).idleDeadlineAt).toBeLessThan(now + 15_000);
+    expect(mod.__test__.getSession(adapterKey('twitter'))!.idleDeadlineAt).toBeLessThan(now + 15_000);
   });
 
   it('releases owned leases from the idle alarm path', async () => {

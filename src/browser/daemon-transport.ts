@@ -21,9 +21,17 @@ export interface DaemonStatus {
   pid: number;
   uptime: number;
   daemonVersion?: string;
+  implementation?: string;
+  bridgeBuildId?: string;
+  protocolVersion?: { major: number; minor: number };
+  capabilities?: string[];
   extensionConnected: boolean;
   extensionVersion?: string;
   extensionCompatRange?: string;
+  extensionImplementation?: string;
+  extensionBridgeBuildId?: string;
+  extensionProtocolVersion?: { major: number; minor: number };
+  extensionCapabilities?: string[];
   contextId?: string;
   profileRequired?: boolean;
   profileDisconnected?: boolean;
@@ -39,6 +47,10 @@ export interface BrowserProfileStatus {
   extensionConnected: boolean;
   extensionVersion?: string;
   extensionCompatRange?: string;
+  implementation?: string;
+  bridgeBuildId?: string;
+  protocolVersion?: { major: number; minor: number };
+  capabilities?: string[];
   pending: number;
   lastSeenAt?: number;
 }
