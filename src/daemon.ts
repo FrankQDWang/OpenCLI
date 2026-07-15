@@ -30,6 +30,11 @@ import { DEFAULT_CONTEXT_ID } from './browser/profile.js';
 import { recordExtensionVersion } from './update-check.js';
 import { BRIDGE_IDENTITY, type BridgeIdentity } from './bridge-identity.js';
 import {
+  BROWSER_OPERATION_ACTION,
+  browserOperationFailure,
+  runBrowserOperation,
+} from './browser/daemon-operations.js';
+import {
   PROFILE_DISCONNECTED_HINT,
   buildCommandDispatchFailure,
   buildCommandTimeoutFailure,
@@ -377,6 +382,58 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const timeoutMs = typeof body.deadlineAt === 'number' && body.deadlineAt > 0
         ? Math.max(1000, body.deadlineAt - Date.now())
         : (typeof body.timeout === 'number' && body.timeout > 0 ? body.timeout * 1000 : 120000);
+
+      if (body.action === BROWSER_OPERATION_ACTION) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const operationResult = await Promise.race([
+            runBrowserOperation(body, route.connection.contextId),
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(() => {
+                const failure = buildCommandTimeoutFailure(BROWSER_OPERATION_ACTION, timeoutMs);
+                commandResultUnknownCount++;
+                reject(new DaemonCommandFailure(
+                  failure.message,
+                  failure.errorCode,
+                  failure.errorHint,
+                  failure.status,
+                ));
+              }, timeoutMs);
+            }),
+          ]);
+          jsonResponse(res, 200, {
+            id: body.id,
+            ok: true,
+            data: operationResult.data,
+            ...(operationResult.page ? { page: operationResult.page } : {}),
+            ...(operationResult.idleDeadlineAt !== undefined
+              ? { idleDeadlineAt: operationResult.idleDeadlineAt }
+              : {}),
+          });
+        } catch (error) {
+          if (error instanceof DaemonCommandFailure) {
+            jsonResponse(res, error.status, {
+              id: body.id,
+              ok: false,
+              ...(error.errorCode ? { errorCode: error.errorCode } : {}),
+              error: error.message,
+              ...(error.errorHint ? { errorHint: error.errorHint } : {}),
+            });
+            return;
+          }
+          const failure = browserOperationFailure(error);
+          jsonResponse(res, 400, {
+            id: body.id,
+            ok: false,
+            errorCode: failure.errorCode,
+            error: failure.error,
+            ...(failure.errorHint ? { errorHint: failure.errorHint } : {}),
+          });
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+        return;
+      }
 
       // A transport retry of an in-flight command attaches to it instead of
       // re-dispatching — the extension is already executing this id.
