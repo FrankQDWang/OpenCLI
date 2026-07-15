@@ -199,6 +199,30 @@ export class Page extends BasePage {
     }
   }
 
+  async evaluateWithMetadata<T = unknown>(js: string): Promise<{
+    data: T;
+    page?: string;
+    idleDeadlineAt?: number;
+  }> {
+    const code = buildEvaluateExpression(js, []);
+    try {
+      return await sendCommandFull('exec', { code, ...this._cmdOpts() }) as {
+        data: T;
+        page?: string;
+        idleDeadlineAt?: number;
+      };
+    } catch (err) {
+      const advice = classifyBrowserError(err);
+      if (advice.kind !== 'target-navigation') throw err;
+      await new Promise((resolve) => setTimeout(resolve, advice.delayMs));
+      return sendCommandFull('exec', { code, ...this._cmdOpts() }) as Promise<{
+        data: T;
+        page?: string;
+        idleDeadlineAt?: number;
+      }>;
+    }
+  }
+
   async getCookies(opts: { domain?: string; url?: string } = {}): Promise<BrowserCookie[]> {
     const result = await sendCommand('cookies', { ...this._sessionOpts(), ...opts });
     return Array.isArray(result) ? result : [];

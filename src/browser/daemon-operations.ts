@@ -57,6 +57,7 @@ type BrowserOperationPage = Pick<
   Page,
   | 'click'
   | 'evaluate'
+  | 'evaluateWithMetadata'
   | 'fillText'
   | 'getActivePage'
   | 'getCurrentUrl'
@@ -78,6 +79,7 @@ export async function runBrowserOperation(
   if (command.page) page.setActivePage(command.page);
 
   let data: unknown;
+  let idleDeadlineAt: number | undefined;
   switch (command.operation) {
     case 'state': {
       const snapshot = await page.snapshot({ viewportExpand: 2000, source: 'dom' });
@@ -89,9 +91,12 @@ export async function runBrowserOperation(
     case 'get-url':
       data = await page.getCurrentUrl() ?? '';
       break;
-    case 'evaluate':
-      data = await page.evaluate(requireString(command.code, 'code'));
+    case 'evaluate': {
+      const result = await page.evaluateWithMetadata(requireString(command.code, 'code'));
+      data = result.data;
+      idleDeadlineAt = result.idleDeadlineAt;
       break;
+    }
     case 'find-css':
       data = await page.evaluate(buildFindJs(requireString(command.selector, 'selector'), {
         limit: positiveBoundedInt(command.limit, 'limit', 1, 100),
@@ -132,6 +137,7 @@ export async function runBrowserOperation(
   return {
     data,
     ...(activePage ? { page: activePage } : {}),
+    ...(idleDeadlineAt !== undefined ? { idleDeadlineAt } : {}),
   };
 }
 
