@@ -735,7 +735,7 @@ async function executeWithJournal(cmd, execute) {
   }
 }
 
-var define_OPENCLI_BRIDGE_IDENTITY_default = { implementation: "seektalent-opencli", bridgeBuildId: "seektalent-opencli-1.8.6+browserops.1", protocolVersion: { major: 1, minor: 0 }, capabilities: ["browser.operations.v1", "control-fence.v1", "tab.close-verified.v1", "tab.create-in-existing-window.v1", "tab.find.v1", "tab.idle-deadline.v1"] };
+var define_OPENCLI_BRIDGE_IDENTITY_default = { implementation: "seektalent-opencli", bridgeBuildId: "seektalent-opencli-1.8.6+browserops.2", protocolVersion: { major: 1, minor: 0 }, capabilities: ["browser.operation-deadline.v1", "browser.operations.v1", "control-fence.v1", "tab.close-verified.v1", "tab.create-in-existing-window.v1", "tab.find.v1", "tab.idle-deadline.v1"] };
 let ws = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;

@@ -32,6 +32,19 @@ class FakePage {
     return { matches_n: 1, entries: [{ ref: 1 }] };
   }
 
+  async evaluateWithMetadata(code: string): Promise<{
+    data: unknown;
+    page?: string;
+    idleDeadlineAt?: number;
+  }> {
+    this.evaluated.push(code);
+    return {
+      data: { matches_n: 1, entries: [{ ref: 1 }] },
+      page: this.activePage,
+      idleDeadlineAt: 123456,
+    };
+  }
+
   async click(target: string): Promise<{ matches_n: number; match_level: 'exact' }> {
     return { matches_n: target === '1' ? 1 : 0, match_level: 'exact' };
   }
@@ -104,6 +117,17 @@ describe('daemon browser operations', () => {
 
     expect(page.evaluated[0]).toContain('#resultList .card');
     expect(page.evaluated[1]).toContain('Search');
+  });
+
+  it('preserves the extension idle deadline for evaluate operations', async () => {
+    const page = new FakePage();
+
+    await expect(runBrowserOperation(command('evaluate', { code: 'document.title' }), 'profile-1', factory(page)))
+      .resolves.toEqual({
+        data: { matches_n: 1, entries: [{ ref: 1 }] },
+        page: 'page-1',
+        idleDeadlineAt: 123456,
+      });
   });
 
   it('delegates click, fill, and waits to Page without CLI parsing', async () => {

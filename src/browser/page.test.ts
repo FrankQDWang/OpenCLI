@@ -131,6 +131,29 @@ describe('Page.evaluate', () => {
       code: '21 + 21',
     }));
   });
+
+  it('returns extension command metadata when requested by daemon operations', async () => {
+    sendCommandFullMock.mockResolvedValueOnce({
+      data: 42,
+      page: 'page-1',
+      idleDeadlineAt: 123456,
+    });
+
+    const page = new Page('controlled-session', 60, undefined, undefined, 'adapter');
+    page.setActivePage('page-1');
+
+    await expect(page.evaluateWithMetadata<number>('21 + 21')).resolves.toEqual({
+      data: 42,
+      page: 'page-1',
+      idleDeadlineAt: 123456,
+    });
+    expect(sendCommandFullMock).toHaveBeenCalledWith('exec', expect.objectContaining({
+      code: '21 + 21',
+      idleTimeout: 60,
+      page: 'page-1',
+      session: 'controlled-session',
+    }));
+  });
 });
 
 describe('Page network capture compatibility', () => {
