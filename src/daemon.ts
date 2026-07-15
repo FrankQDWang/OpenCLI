@@ -36,6 +36,7 @@ import {
   buildExtensionDisconnectFailure,
   getResponseCorsHeaders,
   resolveProfileRoute,
+  validateBridgePeerIdentity,
 } from './daemon-utils.js';
 
 const PORT = DEFAULT_DAEMON_PORT;
@@ -355,6 +356,18 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           errorCode: route.errorCode,
           error: route.error,
           ...(route.errorHint ? { errorHint: route.errorHint } : {}),
+        });
+        return;
+      }
+
+      const bridgeFailure = validateBridgePeerIdentity(BRIDGE_IDENTITY, route.connection);
+      if (bridgeFailure) {
+        jsonResponse(res, bridgeFailure.status, {
+          id: body.id,
+          ok: false,
+          errorCode: bridgeFailure.errorCode,
+          error: bridgeFailure.error,
+          errorHint: bridgeFailure.errorHint,
         });
         return;
       }

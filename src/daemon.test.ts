@@ -9,6 +9,7 @@ import {
   commandResultUnknownMessage,
   getResponseCorsHeaders,
   resolveProfileRoute,
+  validateBridgePeerIdentity,
 } from './daemon-utils.js';
 
 describe('getResponseCorsHeaders', () => {
@@ -33,6 +34,32 @@ describe('getResponseCorsHeaders', () => {
 });
 
 describe('daemon command dispatch', () => {
+  const expectedBridge = {
+    implementation: 'seektalent-opencli',
+    bridgeBuildId: 'seektalent-opencli-1.8.6+test',
+    protocolVersion: { major: 1, minor: 0 },
+    capabilities: ['tab.find.v1', 'tab.close-verified.v1'],
+  };
+
+  it('accepts only a compatible paired extension before command dispatch', () => {
+    expect(validateBridgePeerIdentity(expectedBridge, expectedBridge)).toBeNull();
+    expect(validateBridgePeerIdentity(expectedBridge, {
+      ...expectedBridge,
+      protocolVersion: { major: 1, minor: 1 },
+      capabilities: [...expectedBridge.capabilities, 'newer.v1'],
+    })).toBeNull();
+  });
+
+  it.each([
+    [{ ...expectedBridge, implementation: 'opencli' }, 'bridge_wrong_implementation'],
+    [{ ...expectedBridge, bridgeBuildId: 'upstream-1.8.6' }, 'bridge_build_mismatch'],
+    [{ ...expectedBridge, protocolVersion: { major: 2, minor: 0 } }, 'bridge_protocol_mismatch'],
+    [{ ...expectedBridge, protocolVersion: { major: 1, minor: -1 } }, 'bridge_protocol_mismatch'],
+    [{ ...expectedBridge, capabilities: ['tab.find.v1'] }, 'bridge_capability_missing'],
+  ])('rejects an incompatible extension identity with %s', (actual, errorCode) => {
+    expect(validateBridgePeerIdentity(expectedBridge, actual)).toMatchObject({ errorCode, status: 409 });
+  });
+
   it('uses a distinct command_result_unknown contract for ambiguous dispatched commands', () => {
     expect(COMMAND_RESULT_UNKNOWN_CODE).toBe('command_result_unknown');
     expect(commandResultUnknownMessage('navigate')).toContain('navigate command was dispatched');

@@ -6,6 +6,72 @@ export const COMMAND_RESULT_UNKNOWN_HINT =
 export const PROFILE_DISCONNECTED_HINT =
   'Open that Chrome profile and make sure the OpenCLI extension is enabled, or choose another profile with opencli profile use <name>.';
 
+export type BridgePeerIdentity = {
+  implementation: string | null;
+  bridgeBuildId: string | null;
+  protocolVersion: { major: number; minor: number } | null;
+  capabilities: string[];
+};
+
+export type BridgeIdentityFailure = {
+  errorCode:
+    | 'bridge_wrong_implementation'
+    | 'bridge_build_mismatch'
+    | 'bridge_protocol_mismatch'
+    | 'bridge_capability_missing';
+  error: string;
+  errorHint: string;
+  status: 409;
+};
+
+/** Reject an extension that cannot safely execute this daemon build's protocol. */
+export function validateBridgePeerIdentity(
+  expected: BridgePeerIdentity,
+  actual: BridgePeerIdentity,
+): BridgeIdentityFailure | null {
+  if (actual.implementation !== expected.implementation) {
+    return {
+      errorCode: 'bridge_wrong_implementation',
+      error: 'The connected Browser Bridge extension is not the SeekTalent OpenCLI implementation.',
+      errorHint: 'Disable the other OpenCLI extension, then reload the Browser Bridge bundled with SeekTalent.',
+      status: 409,
+    };
+  }
+  if (actual.bridgeBuildId !== expected.bridgeBuildId) {
+    return {
+      errorCode: 'bridge_build_mismatch',
+      error: 'The OpenCLI daemon and Browser Bridge extension are from different builds.',
+      errorHint: 'Reload Chrome after installing the matching SeekTalent browser bridge bundle.',
+      status: 409,
+    };
+  }
+  if (
+    !expected.protocolVersion
+    || !actual.protocolVersion
+    || actual.protocolVersion.major !== expected.protocolVersion.major
+    || actual.protocolVersion.minor < expected.protocolVersion.minor
+  ) {
+    return {
+      errorCode: 'bridge_protocol_mismatch',
+      error: 'The connected Browser Bridge extension uses an incompatible protocol version.',
+      errorHint: 'Install or roll back the OpenCLI daemon and extension as one paired bundle.',
+      status: 409,
+    };
+  }
+  const missingCapabilities = expected.capabilities.filter(
+    (capability) => !actual.capabilities.includes(capability),
+  );
+  if (missingCapabilities.length > 0) {
+    return {
+      errorCode: 'bridge_capability_missing',
+      error: `The connected Browser Bridge extension is missing required capabilities: ${missingCapabilities.join(', ')}.`,
+      errorHint: 'Install or roll back the OpenCLI daemon and extension as one paired bundle.',
+      status: 409,
+    };
+  }
+  return null;
+}
+
 export type DaemonFailureContract = {
   message: string;
   errorCode: string;
