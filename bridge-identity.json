@@ -1,11 +1,12 @@
 {
   "implementation": "seektalent-opencli",
-  "bridgeBuildId": "seektalent-opencli-1.8.6+prototype.1",
+  "bridgeBuildId": "seektalent-opencli-1.8.6+browserops.1",
   "protocolVersion": {
     "major": 1,
     "minor": 0
   },
   "capabilities": [
+    "browser.operations.v1",
     "control-fence.v1",
     "tab.close-verified.v1",
     "tab.create-in-existing-window.v1",
