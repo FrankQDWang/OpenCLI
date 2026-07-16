@@ -17,6 +17,7 @@ function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: repoRoot,
     encoding: 'utf-8',
+    env: options.env ? { ...process.env, ...options.env } : process.env,
     stdio: options.capture ? 'pipe' : 'inherit',
   });
   if (result.status !== 0) {
@@ -96,7 +97,12 @@ async function main() {
     run(npmCommand, ['run', 'build']);
     run(npmCommand, ['--prefix', 'extension', 'run', 'build']);
     run(npmCommand, ['--prefix', 'extension', 'run', 'package:release', '--', '--out', extensionDir]);
-    run(npmCommand, ['pack', '--ignore-scripts', '--pack-destination', runtimeDir]);
+    await fs.access(path.join(repoRoot, 'dist', 'src', 'main.js'));
+    run(
+      npmCommand,
+      ['pack', '--ignore-scripts', '--pack-destination', runtimeDir],
+      { env: { WTSCLI_SKIP_PREPARE_BUILD: '1' } },
+    );
 
     const packedRuntimeFiles = await collectFiles(runtimeDir);
     if (packedRuntimeFiles.length !== 1 || !packedRuntimeFiles[0].endsWith('.tgz')) {
