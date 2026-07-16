@@ -735,7 +735,7 @@ async function executeWithJournal(cmd, execute) {
   }
 }
 
-var define_OPENCLI_BRIDGE_IDENTITY_default = { implementation: "seektalent-opencli", bridgeBuildId: "seektalent-opencli-1.8.6+browserops.2", protocolVersion: { major: 1, minor: 0 }, capabilities: ["browser.operation-deadline.v1", "browser.operations.v1", "control-fence.v1", "tab.close-verified.v1", "tab.create-in-existing-window.v1", "tab.find.v1", "tab.idle-deadline.v1"] };
+var define_OPENCLI_BRIDGE_IDENTITY_default = { implementation: "seektalent-opencli", bridgeBuildId: "seektalent-opencli-0.1.0+wtscli.1", protocolVersion: { major: 1, minor: 0 }, capabilities: ["browser.operation-deadline.v1", "browser.operations.v1", "control-fence.v1", "tab.close-verified.v1", "tab.create-in-existing-window.v1", "tab.find.v1", "tab.idle-deadline.v1"] };
 let ws = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
@@ -863,7 +863,7 @@ async function connectAttempt() {
       type: "hello",
       contextId: currentContextId,
       version: chrome.runtime.getManifest().version,
-      compatRange: ">=1.7.0",
+      compatRange: ">=0.1.0 <0.2.0",
       implementation: define_OPENCLI_BRIDGE_IDENTITY_default.implementation,
       bridgeBuildId: define_OPENCLI_BRIDGE_IDENTITY_default.bridgeBuildId,
       protocolVersion: define_OPENCLI_BRIDGE_IDENTITY_default.protocolVersion,
@@ -936,7 +936,7 @@ const REGISTRY_KEY = "opencli_target_lease_registry_v2";
 const CONTROL_FENCE_REGISTRY_KEY = "opencli_control_fences_v1";
 const LEASE_IDLE_ALARM_PREFIX = "opencli:lease-idle:";
 const CONTAINER_TAB_GROUP_TITLE = {
-  interactive: "OpenCLI Browser",
+  interactive: "WTSCLI Browser",
   // Retained for registry/type compatibility. Adapter automation no longer
   // creates or discovers a visible tab group.
   automation: "OpenCLI Adapter"
@@ -1738,7 +1738,7 @@ function initialize() {
     await reconcileTargetLeaseRegistry();
     await connect();
   })();
-  console.log("[opencli] OpenCLI extension initialized");
+  console.log("[wtscli] WTSCLI extension initialized");
 }
 chrome.runtime.onInstalled.addListener(() => {
   initialize();

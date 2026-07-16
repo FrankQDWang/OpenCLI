@@ -1,6 +1,6 @@
 {
   "implementation": "seektalent-opencli",
-  "bridgeBuildId": "seektalent-opencli-1.8.6+browserops.2",
+  "bridgeBuildId": "seektalent-opencli-0.1.0+wtscli.1",
   "protocolVersion": {
     "major": 1,
     "minor": 0

@@ -80,8 +80,10 @@ async function main() {
   const identityPath = path.join(repoRoot, 'bridge-identity.json');
   const originalIdentityText = await fs.readFile(identityPath, 'utf-8');
   const identity = JSON.parse(originalIdentityText);
+  const packageMetadata = JSON.parse(await fs.readFile(path.join(repoRoot, 'package.json'), 'utf-8'));
+  const cliVersion = packageMetadata.version;
   const forkCommit = git('rev-parse', 'HEAD');
-  const bridgeBuildId = `seektalent-opencli-1.8.6+${forkCommit.slice(0, 12)}`;
+  const bridgeBuildId = `seektalent-opencli-${cliVersion}+${forkCommit.slice(0, 12)}`;
   const releaseIdentity = { ...identity, bridgeBuildId };
 
   await fs.rm(outDir, { recursive: true, force: true });
@@ -96,11 +98,15 @@ async function main() {
     run(npmCommand, ['--prefix', 'extension', 'run', 'package:release', '--', '--out', extensionDir]);
     run(npmCommand, ['pack', '--ignore-scripts', '--pack-destination', runtimeDir]);
 
-    const runtimeFiles = await collectFiles(runtimeDir);
-    if (runtimeFiles.length !== 1 || !runtimeFiles[0].endsWith('.tgz')) {
-      throw new Error(`Expected one runtime .tgz, found: ${runtimeFiles.join(', ')}`);
+    const packedRuntimeFiles = await collectFiles(runtimeDir);
+    if (packedRuntimeFiles.length !== 1 || !packedRuntimeFiles[0].endsWith('.tgz')) {
+      throw new Error(`Expected one runtime .tgz, found: ${packedRuntimeFiles.join(', ')}`);
     }
-    const runtimePath = path.join(runtimeDir, runtimeFiles[0]);
+    const runtimeAsset = `wtscli-${cliVersion}.tgz`;
+    if (packedRuntimeFiles[0] !== runtimeAsset) {
+      await fs.rename(path.join(runtimeDir, packedRuntimeFiles[0]), path.join(runtimeDir, runtimeAsset));
+    }
+    const runtimePath = path.join(runtimeDir, runtimeAsset);
     const runtimeStats = await fs.stat(runtimePath);
     const extensionTree = await describeTree(extensionDir);
     const extensionManifest = JSON.parse(await fs.readFile(path.join(extensionDir, 'manifest.json'), 'utf-8'));
@@ -117,8 +123,8 @@ async function main() {
       protocolVersion: releaseIdentity.protocolVersion,
       capabilities: releaseIdentity.capabilities,
       cli: {
-        version: '1.8.6',
-        asset: `runtime/${runtimeFiles[0]}`,
+        version: cliVersion,
+        asset: `runtime/${runtimeAsset}`,
         size: runtimeStats.size,
         sha256: await sha256(runtimePath),
       },
@@ -136,7 +142,7 @@ async function main() {
       `${JSON.stringify(manifest, null, 2)}\n`,
       'utf-8',
     );
-    process.stdout.write(`SeekTalent browser bridge bundle created at ${outDir}\n`);
+    process.stdout.write(`WTSCLI browser bridge bundle created at ${outDir}\n`);
   } finally {
     await fs.writeFile(identityPath, originalIdentityText, 'utf-8');
     run(npmCommand, ['--prefix', 'extension', 'run', 'build']);

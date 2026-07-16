@@ -1,9 +1,9 @@
 {
-  "name": "opencli-extension",
-  "version": "1.0.22-seektalent.1",
+  "name": "wtscli-extension",
+  "version": "0.1.0",
   "private": true,
   "opencli": {
-    "compatRange": ">=1.7.0"
+    "compatRange": ">=0.1.0 <0.2.0"
   },
   "type": "module",
   "scripts": {

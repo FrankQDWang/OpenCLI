@@ -1568,7 +1568,7 @@ describe('background tab isolation', () => {
     expect(chrome.windows.create).toHaveBeenNthCalledWith(1, expect.objectContaining({ focused: true }));
     expect(chrome.windows.create).toHaveBeenNthCalledWith(2, expect.objectContaining({ focused: false }));
     expect(groups).toEqual([
-      expect.objectContaining({ windowId: 20, title: 'OpenCLI Browser' }),
+      expect.objectContaining({ windowId: 20, title: 'WTSCLI Browser' }),
     ]);
     expect(tabs.find((tab) => tab.id === adapterTabId)?.groupId).toBe(-1);
   });

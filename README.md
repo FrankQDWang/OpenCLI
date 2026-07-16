@@ -1,4 +1,18 @@
-# OpenCLI
+# WTSCLI
+
+WTSCLI is the SeekTalent browser bridge fork based on OpenCLI 1.8.6. Releases are
+published as pinned, paired CLI-and-extension assets for SeekTalent offline
+installers; production installation does not download the runtime from npm.
+
+The `wtscli` command is the preferred entry point. The compatible `opencli`
+entry point and the internal protocol identity remain available so existing
+SeekTalent installations can upgrade without breaking.
+
+## Upstream OpenCLI documentation
+
+The remaining documentation is retained as upstream technical reference. Its
+npm and Chrome Web Store installation instructions are not used by the WTSCLI
+production release path.
 
 > **Convert any website into a CLI & run Browser Use on your logged-in Chrome.**
 > Turn websites, browser sessions, Electron apps, and local tools into deterministic interfaces for humans and AI agents.

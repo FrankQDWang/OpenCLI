@@ -1,17 +1,18 @@
 {
   "name": "@jackwener/opencli",
-  "version": "1.8.6",
+  "version": "0.1.0",
   "publishConfig": {
     "access": "public"
   },
-  "description": "Make any website or Electron App your CLI. AI-powered.",
+  "description": "WTSCLI browser bridge runtime for SeekTalent, based on OpenCLI 1.8.6.",
   "engines": {
     "node": ">=20.0.0"
   },
   "type": "module",
   "main": "dist/src/main.js",
   "bin": {
-    "opencli": "dist/src/main.js"
+    "opencli": "dist/src/main.js",
+    "wtscli": "dist/src/main.js"
   },
   "exports": {
     ".": "./dist/src/main.js",
@@ -74,11 +75,11 @@
     "web",
     "ai"
   ],
-  "author": "jackwener",
+  "author": "FrankQDWang",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jackwener/opencli.git"
+    "url": "git+https://github.com/FrankQDWang/wtscli.git"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

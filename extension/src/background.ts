@@ -294,7 +294,7 @@ const REGISTRY_KEY = 'opencli_target_lease_registry_v2';
 const CONTROL_FENCE_REGISTRY_KEY = 'opencli_control_fences_v1';
 const LEASE_IDLE_ALARM_PREFIX = 'opencli:lease-idle:';
 const CONTAINER_TAB_GROUP_TITLE: Record<OwnedWindowRole, string> = {
-  interactive: 'OpenCLI Browser',
+  interactive: 'WTSCLI Browser',
   // Retained for registry/type compatibility. Adapter automation no longer
   // creates or discovers a visible tab group.
   automation: 'OpenCLI Adapter',
@@ -1353,7 +1353,7 @@ function initialize(): void {
     await reconcileTargetLeaseRegistry();
     await connect();
   })();
-  console.log('[opencli] OpenCLI extension initialized');
+  console.log('[wtscli] WTSCLI extension initialized');
 }
 
 chrome.runtime.onInstalled.addListener(() => {
