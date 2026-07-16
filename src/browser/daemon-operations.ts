@@ -1,4 +1,5 @@
 import { buildFindJs, buildSemanticFindJs, type SemanticFindOptions } from './find.js';
+import { CliError } from '../errors.js';
 import { Page } from './page.js';
 
 export const BROWSER_OPERATION_ACTION = 'browser-operation';
@@ -116,6 +117,13 @@ export async function runBrowserOperation(
       const target = requireString(command.target, 'target');
       const text = requireString(command.text, 'text', true);
       const result = await page.fillText(target, text);
+      if (!result.verified) {
+        throw new CliError(
+          'fill_verification_failed',
+          `Fill verification failed for target "${target}".`,
+          'Refresh browser state, resolve the current input target, and retry once.',
+        );
+      }
       data = { target, text, ...result };
       break;
     }

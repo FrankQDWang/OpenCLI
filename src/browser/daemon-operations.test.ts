@@ -9,6 +9,7 @@ import {
 class FakePage {
   activePage: string | undefined;
   evaluated: string[] = [];
+  fillVerified = true;
   waits: unknown[] = [];
 
   setActivePage(page?: string): void {
@@ -62,10 +63,10 @@ class FakePage {
       matches_n: target === '2' ? 1 : 0,
       match_level: 'exact',
       filled: true,
-      verified: true,
+      verified: this.fillVerified,
       expected: text,
-      actual: text,
-      length: text.length,
+      actual: this.fillVerified ? text : '',
+      length: this.fillVerified ? text.length : 0,
     };
   }
 
@@ -144,6 +145,25 @@ describe('daemon browser operations', () => {
     }), 'profile-1', factory(page));
 
     expect(page.waits).toEqual([{ selector: '#resultList', timeout: 30 }]);
+  });
+
+  it('rejects a fill whose final value could not be verified', async () => {
+    const page = new FakePage();
+    page.fillVerified = false;
+
+    await expect(runBrowserOperation(
+      command('fill', { target: '2', text: 'private-input' }),
+      'profile-1',
+      factory(page),
+    )).rejects.toMatchObject({ code: 'fill_verification_failed' });
+
+    const failure = browserOperationFailure(await runBrowserOperation(
+      command('fill', { target: '2', text: 'private-input' }),
+      'profile-1',
+      factory(page),
+    ).catch((error: unknown) => error));
+    expect(failure.errorCode).toBe('fill_verification_failed');
+    expect(failure.error).not.toContain('private-input');
   });
 
   it('rejects malformed control fences before touching a page', async () => {

@@ -2239,7 +2239,13 @@ Examples:
         return;
       }
       const result = await page.fillText(resolved.target, resolved.value, parsed.opts);
-      if (!result.verified) process.exitCode = EXIT_CODES.GENERIC_ERROR;
+      if (!result.verified) {
+        throw new BrowserCommandError(
+          `Fill verification failed for target "${resolved.target}".`,
+          'fill_verification_failed',
+          'Refresh browser state, resolve the current input target, and retry once.',
+        );
+      }
       console.log(JSON.stringify({
         filled: result.filled,
         verified: result.verified,

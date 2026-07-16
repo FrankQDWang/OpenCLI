@@ -3309,7 +3309,7 @@ describe('browser click/type commands', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it('fill: sets a non-zero exit code when verification fails', async () => {
+  it('fill: emits a typed error without echoing input when verification fails', async () => {
     (browserState.page!.fillText as any).mockResolvedValueOnce({
       filled: true,
       verified: false,
@@ -3324,14 +3324,11 @@ describe('browser click/type commands', () => {
     await program.parseAsync(['node', 'opencli', 'browser', '--session', 'test', 'fill', '#msg', 'expected']);
 
     expect(lastJsonLog()).toEqual({
-      filled: true,
-      verified: false,
-      target: '#msg',
-      text: 'expected',
-      actual: 'actual',
-      length: 6,
-      matches_n: 1,
-      match_level: 'exact',
+      error: {
+        code: 'fill_verification_failed',
+        message: 'Fill verification failed for target "#msg".',
+        hint: 'Refresh browser state, resolve the current input target, and retry once.',
+      },
     });
     expect(process.exitCode).toBeDefined();
   });
