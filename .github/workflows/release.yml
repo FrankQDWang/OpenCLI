@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -27,13 +28,14 @@ jobs:
 
       - name: Build paired WTSCLI release assets
         run: |
+          VERSION=$(jq -r .version package.json)
           npm run build:seektalent-bundle -- --out "$RUNNER_TEMP/wtscli-bundle"
           mkdir release-assets
           cp "$RUNNER_TEMP"/wtscli-bundle/runtime/*.tgz release-assets/
           cp "$RUNNER_TEMP"/wtscli-bundle/bridge-manifest.json release-assets/
           (
             cd "$RUNNER_TEMP/wtscli-bundle/extension"
-            zip -r "$GITHUB_WORKSPACE/release-assets/wtscli-extension-v${GITHUB_REF_NAME#v}.zip" .
+            zip -r "$GITHUB_WORKSPACE/release-assets/wtscli-extension-v${VERSION}.zip" .
           )
 
       - name: Create GitHub Release
