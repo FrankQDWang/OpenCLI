@@ -2,13 +2,13 @@
  * Electron app registry — maps site names to launch metadata.
  *
  * Builtin apps are defined here. User-defined apps are loaded
- * from ~/.opencli/apps.yaml (additive only, does not override builtins).
+ * from ~/.seektalent/wtscli/apps.yaml (additive only, does not override builtins).
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import yaml from 'js-yaml';
+import { getWtscliConfigDir } from './runtime-identity.js';
 
 export interface ElectronAppEntry {
   /** CDP debug port (unique per app) */
@@ -84,7 +84,7 @@ function ensureLoaded(): Record<string, ElectronAppEntry> {
 
   let userApps: Record<string, ElectronAppEntry> | undefined;
   try {
-    const yamlPath = path.join(os.homedir(), '.opencli', 'apps.yaml');
+    const yamlPath = path.join(getWtscliConfigDir(), 'apps.yaml');
     if (fs.existsSync(yamlPath)) {
       const content = fs.readFileSync(yamlPath, 'utf-8');
       const parsed = yaml.load(content) as { apps?: Record<string, ElectronAppEntry> };

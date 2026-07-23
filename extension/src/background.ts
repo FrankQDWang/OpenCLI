@@ -1,20 +1,22 @@
 /**
- * OpenCLI — Service Worker (background script).
+ * WTSCLI — Service Worker (background script).
  *
- * Connects to the opencli daemon via WebSocket, receives commands,
+ * Connects to the WTSCLI daemon via WebSocket, receives commands,
  * dispatches them to Chrome APIs (debugger/tabs/cookies), returns results.
  */
 
-declare const __OPENCLI_COMPAT_RANGE__: string;
-declare const __OPENCLI_BRIDGE_IDENTITY__: {
-  implementation: string;
-  bridgeBuildId: string;
-  protocolVersion: { major: number; minor: number };
-  capabilities: string[];
-};
+declare const __WTSCLI_COMPAT_RANGE__: string;
 
 import type { Command, Result } from './protocol';
-import { DAEMON_HOST, DAEMON_PORT, DAEMON_WS_URL, DAEMON_PING_URL } from './protocol';
+import {
+  DAEMON_HOST,
+  DAEMON_PORT,
+  DAEMON_PING_URL,
+  DAEMON_REQUEST_MARKER,
+  DAEMON_RESPONSE_MARKER,
+  DAEMON_WS_URL,
+} from './protocol';
+import { EXTENSION_BRIDGE_IDENTITY } from './bridge-identity';
 import * as executor from './cdp';
 import * as identity from './identity';
 import { executeWithJournal } from './journal';
@@ -22,7 +24,7 @@ import { executeWithJournal } from './journal';
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
-const CONTEXT_ID_KEY = 'opencli_context_id_v1';
+const CONTEXT_ID_KEY = 'wtscli_context_id_v1';
 let currentContextId = 'default';
 let contextIdPromise: Promise<string> | null = null;
 let connectInFlight: Promise<void> | null = null;
@@ -125,9 +127,13 @@ async function connectAttempt(): Promise<void> {
 
   try {
     const res = await fetch(DAEMON_PING_URL, { signal: AbortSignal.timeout(1000) });
-    if (!res.ok) {
+    if (
+      !res.ok
+      || !res.headers
+      || res.headers.get(DAEMON_RESPONSE_MARKER.name) !== DAEMON_RESPONSE_MARKER.value
+    ) {
       scheduleReconnect();
-      return; // unexpected response — not our daemon, but keep polling.
+      return; // foreign or unexpected response — never open a socket to it.
     }
     // Daemon is reachable — proceed straight to the WebSocket below.
     reconnectAttempts = 0;
@@ -151,7 +157,7 @@ async function connectAttempt(): Promise<void> {
 
   thisWs.onopen = () => {
     if (ws !== thisWs) return;
-    console.log('[opencli] Connected to daemon');
+    console.log('[wtscli] Connected to daemon');
     reconnectAttempts = 0; // Reset on successful connection
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
@@ -162,11 +168,11 @@ async function connectAttempt(): Promise<void> {
       type: 'hello',
       contextId: currentContextId,
       version: chrome.runtime.getManifest().version,
-      compatRange: __OPENCLI_COMPAT_RANGE__,
-      implementation: __OPENCLI_BRIDGE_IDENTITY__.implementation,
-      bridgeBuildId: __OPENCLI_BRIDGE_IDENTITY__.bridgeBuildId,
-      protocolVersion: __OPENCLI_BRIDGE_IDENTITY__.protocolVersion,
-      capabilities: __OPENCLI_BRIDGE_IDENTITY__.capabilities,
+      compatRange: __WTSCLI_COMPAT_RANGE__,
+      implementation: EXTENSION_BRIDGE_IDENTITY.implementation,
+      bridgeBuildId: EXTENSION_BRIDGE_IDENTITY.bridgeBuildId,
+      protocolVersion: EXTENSION_BRIDGE_IDENTITY.protocolVersion,
+      capabilities: EXTENSION_BRIDGE_IDENTITY.capabilities,
     });
     // Application-level keepalive. Chrome (116+) extends the service worker's
     // lifetime on WebSocket ACTIVITY — an idle OPEN socket does not count, so
@@ -186,14 +192,14 @@ async function connectAttempt(): Promise<void> {
       const target = ws && ws.readyState === WebSocket.OPEN ? ws : thisWs;
       safeSend(target, result);
     } catch (err) {
-      console.error('[opencli] Message handling error:', err);
+      console.error('[wtscli] Message handling error:', err);
     }
   };
 
   thisWs.onclose = () => {
     stopWsKeepalive(thisWs);
     if (ws !== thisWs) return;
-    console.log('[opencli] Disconnected from daemon');
+    console.log('[wtscli] Disconnected from daemon');
     ws = null;
     scheduleReconnect();
   };
@@ -290,14 +296,14 @@ const automationSessions = new Map<string, TargetLease>();
 const IDLE_TIMEOUT_DEFAULT = 30_000;      // 30s — adapter-driven automation
 const IDLE_TIMEOUT_INTERACTIVE = 600_000; // 10min — human-paced browser:* / operate:*
 const IDLE_TIMEOUT_NONE = -1;             // borrowed bound tabs stay bound until unbound/closed
-const REGISTRY_KEY = 'opencli_target_lease_registry_v2';
-const CONTROL_FENCE_REGISTRY_KEY = 'opencli_control_fences_v1';
-const LEASE_IDLE_ALARM_PREFIX = 'opencli:lease-idle:';
+const REGISTRY_KEY = 'wtscli_target_lease_registry_v2';
+const CONTROL_FENCE_REGISTRY_KEY = 'wtscli_control_fences_v1';
+const LEASE_IDLE_ALARM_PREFIX = 'wtscli:lease-idle:';
 const CONTAINER_TAB_GROUP_TITLE: Record<OwnedWindowRole, string> = {
   interactive: 'WTSCLI Browser',
   // Retained for registry/type compatibility. Adapter automation no longer
   // creates or discovers a visible tab group.
-  automation: 'OpenCLI Adapter',
+  automation: 'WTSCLI Adapter',
 };
 const OWNED_TAB_GROUP_COLOR: chrome.tabGroups.ColorEnum = 'orange';
 let leaseMutationQueue: Promise<void> = Promise.resolve();
@@ -360,7 +366,7 @@ function getSessionName(session?: string): string {
   if (!raw) throw new CommandFailure(
     'session_required',
     'Browser session is required.',
-    'Pass a browser session name, e.g. opencli browser <session> <command>.',
+    'Pass a browser session name, e.g. wtscli browser <session> <command>.',
   );
   return raw;
 }
@@ -906,7 +912,7 @@ async function ensureOwnedContainerGroup(
   tabIds: Array<number | undefined>,
 ): Promise<OwnedContainerGroup | null> {
   // Adapter automation runs in an owned background window but no longer creates
-  // a visible "OpenCLI Adapter" tab group. Its ownership anchors are the
+  // a visible "WTSCLI Adapter" tab group. Its ownership anchors are the
   // persisted container windowId and per-lease preferredTabId.
   if (role === 'automation') return null;
 
@@ -953,7 +959,7 @@ async function ensureOwnedContainerGroupUnlocked(
     }
     return canonical;
   } catch (err) {
-    console.warn(`[opencli] Failed to ensure ${role} tab group: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(`[wtscli] Failed to ensure ${role} tab group: ${err instanceof Error ? err.message : String(err)}`);
     throw err;
   }
 }
@@ -1046,7 +1052,7 @@ async function ensureOwnedContainerWindowUnlocked(
   // lets the next ensure cycle reuse this window instead of spawning a
   // second owned window in `chrome.windows.create`.
   await persistRuntimeState();
-  console.log(`[opencli] Created owned ${role} window ${container.windowId} (start=${startUrl})`);
+  console.log(`[wtscli] Created owned ${role} window ${container.windowId} (start=${startUrl})`);
 
   // Wait for the initial tab to finish loading instead of a fixed 200ms sleep.
   const tabs = await chrome.tabs.query({ windowId: win.id! });
@@ -1217,7 +1223,7 @@ async function createBorrowedHostTabLease(
     throw new CommandFailure('host_page_missing', `Host page "${hostPage}" no longer exists.`);
   }
   if (tabIsOwned(hostTabId)) {
-    throw new CommandFailure('host_page_owned', 'hostPage must identify an existing user tab, not an OpenCLI-owned tab.');
+    throw new CommandFailure('host_page_owned', 'hostPage must identify an existing user tab, not a WTSCLI-owned tab.');
   }
 
   let hostTab: chrome.tabs.Tab;
@@ -1261,7 +1267,7 @@ async function getAutomationWindow(leaseKey: string, initialUrl?: string): Promi
     if (!existing.owned) {
       throw new CommandFailure(
         'bound_window_operation_blocked',
-        `Session "${existing.session}" is bound to a user tab and does not own an OpenCLI tab lease.`,
+        `Session "${existing.session}" is bound to a user tab and does not own a WTSCLI tab lease.`,
         'Use page commands on the bound tab, or unbind the session first.',
       );
     }
@@ -1308,7 +1314,7 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
           // The exact owned tab disappeared with the user window.
         }
       }
-      console.log(`[opencli] ${session.surface} container closed (session=${session.session})`);
+      console.log(`[wtscli] ${session.surface} container closed (session=${session.session})`);
       if (session.idleTimer) clearTimeout(session.idleTimer);
       automationSessions.delete(leaseKey);
       sessionOverrides.delete(leaseKey);
@@ -1327,7 +1333,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       automationSessions.delete(leaseKey);
       sessionOverrides.delete(leaseKey);
       scheduleIdleAlarm(leaseKey, IDLE_TIMEOUT_NONE);
-      console.log(`[opencli] Session ${session.session} detached from tab ${tabId} (tab closed)`);
+      console.log(`[wtscli] Session ${session.session} detached from tab ${tabId} (tab closed)`);
     }
   }
   await persistRuntimeState();
@@ -1413,10 +1419,13 @@ async function fetchDaemonVersion(): Promise<string | null> {
   try {
     const res = await fetch(`http://${DAEMON_HOST}:${DAEMON_PORT}/status`, {
       method: 'GET',
-      headers: { 'X-OpenCLI': '1' },
+      headers: { [DAEMON_REQUEST_MARKER.name]: DAEMON_REQUEST_MARKER.value },
       signal: AbortSignal.timeout(1500),
     });
-    if (!res.ok) return null;
+    if (
+      !res.ok
+      || res.headers.get(DAEMON_RESPONSE_MARKER.name) !== DAEMON_RESPONSE_MARKER.value
+    ) return null;
     const body = await res.json() as { daemonVersion?: unknown };
     return typeof body.daemonVersion === 'string' ? body.daemonVersion : null;
   } catch {
@@ -1632,13 +1641,13 @@ async function resolveTab(tabId: number | undefined, leaseKey: string, initialUr
           matchesSession
             ? `Bound tab for session "${session.session}" is not debuggable (${tab.url ?? 'unknown URL'}).`
             : `Target tab is not the tab bound to session "${session.session}".`,
-          'Run "opencli browser bind" again on a debuggable http(s) tab.',
+          'Run "wtscli browser bind" again on a debuggable http(s) tab.',
         );
       }
       if (session && !matchesSession && session.preferredTabId === null && isDebuggableUrl(tab.url)) {
         // Tab drifted to another window but content is still valid.
         // Try to move it back instead of abandoning it.
-        console.warn(`[opencli] Tab ${tabId} drifted to window ${tab.windowId}, moving back to ${session.windowId}`);
+        console.warn(`[wtscli] Tab ${tabId} drifted to window ${tab.windowId}, moving back to ${session.windowId}`);
         try {
           await chrome.tabs.move(tabId, { windowId: session.windowId, index: -1 });
           const moved = await chrome.tabs.get(tabId);
@@ -1646,10 +1655,10 @@ async function resolveTab(tabId: number | undefined, leaseKey: string, initialUr
             return { tabId, tab: moved };
           }
         } catch (moveErr) {
-          console.warn(`[opencli] Failed to move tab back: ${moveErr}`);
+          console.warn(`[wtscli] Failed to move tab back: ${moveErr}`);
         }
       } else if (!isDebuggableUrl(tab.url)) {
-        console.warn(`[opencli] Tab ${tabId} URL is not debuggable (${tab.url}), re-resolving`);
+        console.warn(`[wtscli] Tab ${tabId} URL is not debuggable (${tab.url}), re-resolving`);
       }
     } catch (err) {
       if (err instanceof CommandFailure) throw err;
@@ -1658,7 +1667,7 @@ async function resolveTab(tabId: number | undefined, leaseKey: string, initialUr
         throw new CommandFailure(
           'bound_tab_gone',
           `Bound tab for session "${existingSession.session}" no longer exists.`,
-          'Run "opencli browser bind" again, then retry the command.',
+          'Run "wtscli browser bind" again, then retry the command.',
         );
       }
       if (existingSession?.owned && existingSession.windowOwnership === 'borrowed') {
@@ -1668,7 +1677,7 @@ async function resolveTab(tabId: number | undefined, leaseKey: string, initialUr
           `Owned tab for session "${existingSession.session}" no longer exists.`,
         );
       }
-      console.warn(`[opencli] Tab ${tabId} no longer exists, re-resolving`);
+      console.warn(`[wtscli] Tab ${tabId} no longer exists, re-resolving`);
     }
   }
 
@@ -1682,7 +1691,7 @@ async function resolveTab(tabId: number | undefined, leaseKey: string, initialUr
         throw new CommandFailure(
           'bound_tab_not_debuggable',
           `Bound tab for session "${session.session}" is not debuggable (${preferredTab.url ?? 'unknown URL'}).`,
-          'Switch the tab to an http(s) page or run "opencli browser bind" on another tab.',
+          'Switch the tab to an http(s) page or run "wtscli browser bind" on another tab.',
         );
       }
     } catch (err) {
@@ -1692,7 +1701,7 @@ async function resolveTab(tabId: number | undefined, leaseKey: string, initialUr
         throw new CommandFailure(
           'bound_tab_gone',
           `Bound tab for session "${session.session}" no longer exists.`,
-          'Run "opencli browser bind" again, then retry the command.',
+          'Run "wtscli browser bind" again, then retry the command.',
         );
       }
       if (session.windowOwnership === 'borrowed') {
@@ -1727,7 +1736,7 @@ async function resolveTab(tabId: number | undefined, leaseKey: string, initialUr
     try {
       const updated = await chrome.tabs.get(reuseTab.id);
       if (isDebuggableUrl(updated.url)) return { tabId: reuseTab.id, tab: updated };
-      console.warn(`[opencli] data: URI was intercepted (${updated.url}), creating fresh tab`);
+      console.warn(`[wtscli] data: URI was intercepted (${updated.url}), creating fresh tab`);
     } catch {
       // Tab was closed during navigation
     }
@@ -1931,7 +1940,7 @@ async function handleNavigate(cmd: Command, leaseKey: string): Promise<Result> {
     // Timeout fallback with warning
     timeoutTimer = setTimeout(() => {
       timedOut = true;
-      console.warn(`[opencli] Navigate to ${targetUrl} timed out after 15s`);
+      console.warn(`[wtscli] Navigate to ${targetUrl} timed out after 15s`);
       finish();
     }, 15000);
   });
@@ -1947,12 +1956,12 @@ async function handleNavigate(cmd: Command, leaseKey: string): Promise<Result> {
     && postNavigationSession.windowOwnership === 'owned'
     && tab.windowId !== postNavigationSession.windowId
   ) {
-    console.warn(`[opencli] Tab ${tabId} drifted to window ${tab.windowId} during navigation, moving back to ${postNavigationSession.windowId}`);
+    console.warn(`[wtscli] Tab ${tabId} drifted to window ${tab.windowId} during navigation, moving back to ${postNavigationSession.windowId}`);
     try {
       await chrome.tabs.move(tabId, { windowId: postNavigationSession.windowId, index: -1 });
       tab = await chrome.tabs.get(tabId);
     } catch (moveErr) {
-      console.warn(`[opencli] Failed to recover drifted tab: ${moveErr}`);
+      console.warn(`[wtscli] Failed to recover drifted tab: ${moveErr}`);
     }
   }
 
@@ -1966,8 +1975,8 @@ async function handleTabs(cmd: Command, leaseKey: string): Promise<Result> {
       id: cmd.id,
       ok: false,
       errorCode: 'bound_tab_mutation_blocked',
-      error: `Session "${session.session}" is bound to a user tab; tab new/select/close requires an owned OpenCLI session.`,
-      errorHint: 'Unbind the session first, or use a different session for owned OpenCLI tabs.',
+      error: `Session "${session.session}" is bound to a user tab; tab new/select/close requires an owned WTSCLI session.`,
+      errorHint: 'Unbind the session first, or use a different session for owned WTSCLI tabs.',
     };
   }
   switch (cmd.op) {
@@ -2136,7 +2145,7 @@ async function handleTabs(cmd: Command, leaseKey: string): Promise<Result> {
           id: cmd.id,
           ok: false,
           errorCode: 'borrowed_host_tab_activation_blocked',
-          error: 'Borrowed-host owned tabs cannot be activated through OpenCLI.',
+          error: 'Borrowed-host owned tabs cannot be activated through WTSCLI.',
         };
       }
       if (cmd.index === undefined && cmd.page === undefined)
@@ -2376,12 +2385,12 @@ async function releaseBorrowedHostLease(
   } catch {
     identity.evictTab(tabId);
     await removeLeaseSession(leaseKey);
-    console.log(`[opencli] Closed borrowed-host owned tab ${tabId} (session=${session.session}, ${reason})`);
+    console.log(`[wtscli] Closed borrowed-host owned tab ${tabId} (session=${session.session}, ${reason})`);
     return { requested, outcome: 'closed', verified: true, errorCode: null };
   }
 
   console.warn(
-    `[opencli] Failed to verify close for borrowed-host owned tab ${tabId}`
+    `[wtscli] Failed to verify close for borrowed-host owned tab ${tabId}`
     + (removeError ? `: ${removeError instanceof Error ? removeError.message : String(removeError)}` : ''),
   );
   resetWindowIdleTimer(leaseKey, Math.min(5_000, Math.max(1, getIdleTimeout(leaseKey))));
@@ -2422,24 +2431,24 @@ async function releaseLease(
       identity.evictTab(tabId);
       if (hasOtherOwnedLease) {
         await chrome.tabs.remove(tabId).catch(() => {});
-        console.log(`[opencli] Released owned tab lease ${tabId} (session=${session.session}, surface=${session.surface}, ${reason})`);
+        console.log(`[wtscli] Released owned tab lease ${tabId} (session=${session.session}, surface=${session.surface}, ${reason})`);
       } else {
         try {
           const tab = await chrome.tabs.update(tabId, { url: BLANK_PAGE, active: true });
           const group = await ensureOwnedContainerGroup(getOwnedWindowRole(leaseKey), session.windowId, [tab.id ?? tabId]);
           if (group) session.windowId = group.windowId;
-          console.log(`[opencli] Released owned tab lease ${tabId} as reusable placeholder (session=${session.session}, surface=${session.surface}, ${reason})`);
+          console.log(`[wtscli] Released owned tab lease ${tabId} as reusable placeholder (session=${session.session}, surface=${session.surface}, ${reason})`);
         } catch {
           await chrome.tabs.remove(tabId).catch(() => {});
-          console.log(`[opencli] Released owned tab lease ${tabId} (session=${session.session}, surface=${session.surface}, ${reason})`);
+          console.log(`[wtscli] Released owned tab lease ${tabId} (session=${session.session}, surface=${session.surface}, ${reason})`);
         }
       }
     } else {
-      console.log(`[opencli] Released legacy owned window lease ${session.windowId} without closing container (session=${session.session}, surface=${session.surface}, ${reason})`);
+      console.log(`[wtscli] Released legacy owned window lease ${session.windowId} without closing container (session=${session.session}, surface=${session.surface}, ${reason})`);
     }
   } else if (session.preferredTabId !== null) {
     await safeDetach(session.preferredTabId);
-    console.log(`[opencli] Detached borrowed tab lease ${session.preferredTabId} (session=${session.session}, surface=${session.surface}, ${reason})`);
+    console.log(`[wtscli] Detached borrowed tab lease ${session.preferredTabId} (session=${session.session}, surface=${session.surface}, ${reason})`);
   }
 
   automationSessions.delete(leaseKey);
@@ -2558,7 +2567,7 @@ async function handleBind(cmd: Command, leaseKey: string): Promise<Result> {
     preferredTabId: boundTab.id,
   });
   resetWindowIdleTimer(leaseKey);
-  console.log(`[opencli] Session ${getSessionFromKey(leaseKey)} explicitly bound to tab ${boundTab.id} (${boundTab.url})`);
+  console.log(`[wtscli] Session ${getSessionFromKey(leaseKey)} explicitly bound to tab ${boundTab.id} (${boundTab.url})`);
   return pageScopedResult(cmd.id, boundTab.id, {
     url: boundTab.url,
     title: boundTab.title,

@@ -84,8 +84,19 @@ async function main() {
   const packageMetadata = JSON.parse(await fs.readFile(path.join(repoRoot, 'package.json'), 'utf-8'));
   const cliVersion = packageMetadata.version;
   const forkCommit = git('rev-parse', 'HEAD');
-  const bridgeBuildId = `seektalent-opencli-${cliVersion}+${forkCommit.slice(0, 12)}`;
+  const bridgeBuildId = `seektalent-wtscli-${cliVersion}+${forkCommit.slice(0, 12)}`;
   const releaseIdentity = { ...identity, bridgeBuildId };
+  const runtimeIdentity = releaseIdentity.runtimeIdentity;
+  if (releaseIdentity.schemaVersion !== 'wtscli.bridge_identity.v1' || !runtimeIdentity) {
+    throw new Error('bridge-identity.json does not contain the versioned WTSCLI runtime identity.');
+  }
+  if (
+    packageMetadata.name !== runtimeIdentity.package.name
+    || packageMetadata.bin?.[runtimeIdentity.package.entrypoint] !== 'dist/src/main.js'
+    || Object.keys(packageMetadata.bin ?? {}).length !== 1
+  ) {
+    throw new Error('package.json package/bin identity does not match bridge-identity.json.');
+  }
 
   await fs.rm(outDir, { recursive: true, force: true });
   await fs.mkdir(runtimeDir, { recursive: true });
@@ -116,10 +127,18 @@ async function main() {
     const runtimeStats = await fs.stat(runtimePath);
     const extensionTree = await describeTree(extensionDir);
     const extensionManifest = JSON.parse(await fs.readFile(path.join(extensionDir, 'manifest.json'), 'utf-8'));
+    const extensionId = extensionIdFromManifestKey(extensionManifest.key);
+    if (
+      extensionId !== runtimeIdentity.extension.id
+      || runtimeIdentity.extension.origin !== `chrome-extension://${extensionId}`
+    ) {
+      throw new Error('Extension manifest key does not match the WTSCLI runtime identity.');
+    }
 
     const manifest = {
       schemaVersion: 'seektalent.browser_bridge_bundle.v1',
       implementation: releaseIdentity.implementation,
+      runtimeIdentity,
       upstreamBase: {
         tag: 'v1.8.6',
         commit: 'cad35e7a6a5ff3f7d6b859bfa4c45195c0390260',
@@ -129,6 +148,8 @@ async function main() {
       protocolVersion: releaseIdentity.protocolVersion,
       capabilities: releaseIdentity.capabilities,
       cli: {
+        package: runtimeIdentity.package.name,
+        entrypoint: runtimeIdentity.package.entrypoint,
         version: cliVersion,
         asset: `runtime/${runtimeAsset}`,
         size: runtimeStats.size,
@@ -136,7 +157,8 @@ async function main() {
       },
       extension: {
         version: extensionManifest.version,
-        id: extensionIdFromManifestKey(extensionManifest.key),
+        id: extensionId,
+        origin: runtimeIdentity.extension.origin,
         directory: 'extension',
         treeSha256: extensionTree.treeSha256,
         manifestSha256: await sha256(path.join(extensionDir, 'manifest.json')),

@@ -42,6 +42,7 @@ import { formatDaemonVersion, isDaemonStale } from './browser/daemon-version.js'
 import { DEFAULT_BROWSER_CONNECT_TIMEOUT } from './browser/config.js';
 import type { BrowserDownloadWaitResult, IPage, ScreenshotOptions } from './types.js';
 import type { BrowserWindowMode } from './runtime.js';
+import { getWtscliCacheDir, getWtscliConfigDir } from './runtime-identity.js';
 
 const CLI_FILE = fileURLToPath(import.meta.url);
 const BROWSER_TAB_OPTION_DESCRIPTION = 'Target tab/page identity returned by "browser open", "browser tab new", or "browser tab list"';
@@ -144,7 +145,7 @@ async function captureNetworkItems(page: import('./types.js').IPage): Promise<Br
     const parsed = JSON.parse(raw) as BrowserNetworkItem[];
     return parsed.map((item) => ({ ...item, timestamp: timestampFromRaw(item.timestamp) }));
   } catch {
-    if (process.env.OPENCLI_VERBOSE) log.warn(`[network] Failed to parse interceptor buffer: ${typeof raw === 'string' ? raw.slice(0, 200) : String(raw)}`);
+    if (process.env.WTSCLI_VERBOSE) log.warn(`[network] Failed to parse interceptor buffer: ${typeof raw === 'string' ? raw.slice(0, 200) : String(raw)}`);
     return [];
   }
 }
@@ -176,7 +177,7 @@ function emitNetworkError(code: string, message: string, extra: Record<string, u
 
 /**
  * Check whether the site-memory scaffolding exists under
- * ~/.opencli/sites/<site>/. Agents have a strong tendency to forget to write
+ * ~/.seektalent/wtscli/sites/<site>/. Agents have a strong tendency to forget to write
  * endpoints.json / notes.md after a successful verify, which dooms the next
  * agent to redo recon from scratch. Surfacing the current state as part of
  * verify's final report converts that "silent skip" into a visible nudge;
@@ -253,10 +254,14 @@ function firstExistingSitemapPath(paths: string[], fileExists: (candidate: strin
   return paths.find((candidate) => fileExists(candidate));
 }
 
-function sitemapPathsForSite(site: string, opts: Required<Pick<SitemapAvailabilityOptions, 'homeDir' | 'packageRoot' | 'fileExists'>>): { local?: string; global?: string } {
+function sitemapPathsForSite(
+  site: string,
+  opts: Required<Pick<SitemapAvailabilityOptions, 'packageRoot' | 'fileExists'>>,
+  stateRoot: string,
+): { local?: string; global?: string } {
   const safeSite = site.replace(/[^a-zA-Z0-9_-]+/g, '-');
   if (!safeSite) return {};
-  const localBase = path.join(opts.homeDir, '.opencli', 'sites', safeSite);
+  const localBase = path.join(stateRoot, 'sites', safeSite);
   return {
     local: firstExistingSitemapPath([
       path.join(localBase, 'sitemap'),
@@ -271,12 +276,15 @@ function sitemapPathsForSite(site: string, opts: Required<Pick<SitemapAvailabili
 
 export function resolveSitemapAvailabilityForUrl(url: string, options: SitemapAvailabilityOptions = {}): SitemapAvailability | null {
   const homeDir = options.homeDir ?? os.homedir();
+  const stateRoot = options.homeDir
+    ? path.join(homeDir, '.seektalent', 'wtscli')
+    : getWtscliConfigDir();
   const packageRoot = options.packageRoot ?? findPackageRoot(CLI_FILE);
   const registry = options.registry ?? getRegistry();
   const fileExists = options.fileExists ?? fs.existsSync;
 
   for (const site of siteNameCandidatesFromUrl(url, registry)) {
-    const paths = sitemapPathsForSite(site, { homeDir, packageRoot, fileExists });
+    const paths = sitemapPathsForSite(site, { packageRoot, fileExists }, stateRoot);
     if (!paths.local && !paths.global) continue;
     const source = paths.local && paths.global ? 'local+global' : paths.local ? 'local' : 'global';
     return {
@@ -329,7 +337,7 @@ function sitemapHintForBrowserUrl(url: string, scope: string, opts: { oncePerSes
 }
 
 export function checkSiteMemory(site: string): SiteMemoryReport {
-  const siteDir = path.join(os.homedir(), '.opencli', 'sites', site);
+  const siteDir = path.join(getWtscliConfigDir(), 'sites', site);
   const endpointsPath = path.join(siteDir, 'endpoints.json');
   const notesPath = path.join(siteDir, 'notes.md');
   let endpointsCount = 0;
@@ -429,7 +437,7 @@ type BrowserTabSummary = {
 };
 
 function getBrowserCacheDir(): string {
-  return process.env.OPENCLI_CACHE_DIR || path.join(os.homedir(), '.opencli', 'cache');
+  return getWtscliCacheDir();
 }
 
 function getBrowserTargetStatePath(scope: string): string {
@@ -488,7 +496,7 @@ async function resolveBrowserTargetInSession(
     }
     throw new Error(
       `Target tab ${candidate} could not be validated in the current browser session. ` +
-      'The Browser Bridge session may have restarted; re-run "opencli browser tab list" and choose a current target.',
+      'The Browser Bridge session may have restarted; re-run "wtscli browser tab list" and choose a current target.',
       { cause: err },
     );
   }
@@ -504,7 +512,7 @@ async function resolveBrowserTargetInSession(
 
   throw new Error(
     `Target tab ${candidate} is not part of the current browser session. ` +
-    'The Browser Bridge session may have restarted; re-run "opencli browser tab list" and choose a current target.',
+    'The Browser Bridge session may have restarted; re-run "wtscli browser tab list" and choose a current target.',
   );
 }
 
@@ -513,15 +521,15 @@ function getBrowserScope(session: string, contextId?: string): string {
 }
 
 function getBrowserControlOptions(): { controlKey?: string; fenceToken?: number } {
-  const controlKey = process.env.OPENCLI_CONTROL_KEY?.trim();
-  const rawFenceToken = process.env.OPENCLI_FENCE_TOKEN?.trim();
+  const controlKey = process.env.WTSCLI_CONTROL_KEY?.trim();
+  const rawFenceToken = process.env.WTSCLI_FENCE_TOKEN?.trim();
   if (!controlKey && !rawFenceToken) return {};
   if (!controlKey || !rawFenceToken || !/^\d+$/.test(rawFenceToken)) {
-    throw new Error('OPENCLI_CONTROL_KEY and a positive integer OPENCLI_FENCE_TOKEN must be set together.');
+    throw new Error('WTSCLI_CONTROL_KEY and a positive integer WTSCLI_FENCE_TOKEN must be set together.');
   }
   const fenceToken = Number(rawFenceToken);
   if (!Number.isSafeInteger(fenceToken) || fenceToken <= 0) {
-    throw new Error('OPENCLI_FENCE_TOKEN must be a positive safe integer.');
+    throw new Error('WTSCLI_FENCE_TOKEN must be a positive safe integer.');
   }
   return { controlKey, fenceToken };
 }
@@ -542,7 +550,7 @@ async function getBrowserPage(
   const { BrowserBridge } = await import('./browser/index.js');
   const bridge = new BrowserBridge();
   // Internal GC timeout for browser sessions. Not the per-command runtime timeout.
-  const envTimeout = process.env.OPENCLI_BROWSER_IDLE_TIMEOUT;
+  const envTimeout = process.env.WTSCLI_BROWSER_IDLE_TIMEOUT;
   const idleTimeout = envTimeout ? parseInt(envTimeout, 10) : undefined;
   const page = await bridge.connect({
     timeout: DEFAULT_BROWSER_CONNECT_TIMEOUT,
@@ -572,10 +580,10 @@ function getBrowserWindowMode(command: Command | undefined, defaultMode: Browser
     if (optionRaw === 'foreground' || optionRaw === 'background') return optionRaw;
     throw new Error(`--window must be one of: foreground, background. Received: "${String(optionRaw)}"`);
   }
-  const envRaw = process.env.OPENCLI_WINDOW;
+  const envRaw = process.env.WTSCLI_WINDOW;
   if (envRaw !== undefined && envRaw !== '') {
     if (envRaw === 'foreground' || envRaw === 'background') return envRaw;
-    throw new Error(`OPENCLI_WINDOW must be one of: foreground, background. Received: "${envRaw}"`);
+    throw new Error(`WTSCLI_WINDOW must be one of: foreground, background. Received: "${envRaw}"`);
   }
   return defaultMode;
 }
@@ -606,7 +614,7 @@ function getBrowserSession(command?: Command): string {
   // reads back the rewritten flag.
   const raw = getCommandOption(command, 'session');
   if (typeof raw === 'string' && raw.trim()) return raw.trim();
-  throw new Error('<session> is a required positional argument: opencli browser <session> <command>');
+  throw new Error('<session> is a required positional argument: wtscli browser <session> <command>');
 }
 
 function getBrowserProfileSelection(command?: Command): ProfileSelection | undefined {
@@ -700,7 +708,7 @@ function parseScreenshotDim(val: string, label: string): number {
 }
 
 function applyVerbose(opts: { verbose?: boolean }): void {
-  if (opts.verbose) process.env.OPENCLI_VERBOSE = '1';
+  if (opts.verbose) process.env.WTSCLI_VERBOSE = '1';
 }
 
 function formatChildCommandSummary(command: Command): string {
@@ -722,7 +730,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
   // enablePositionalOptions: prevents parent from consuming flags meant for subcommands;
   // prerequisite for passThroughOptions to forward --help/--version to external binaries
   program
-    .name('opencli')
+    .name('wtscli')
     .description('Make any website your CLI. Zero setup. AI-powered.')
     .version(PKG_VERSION)
     .option('--profile <name>', 'Chrome profile/context alias for Browser Bridge commands')
@@ -758,8 +766,8 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
           fmt,
           columns: ['command', 'site', 'name', 'aliases', 'description', 'access', 'strategy', 'browser', 'args',
                      ...(isStructured ? ['columns', 'domain'] : [])],
-          title: 'opencli/list',
-          source: 'opencli list',
+          title: 'wtscli/list',
+          source: 'wtscli list',
         });
         return;
       }
@@ -790,7 +798,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
       };
 
       console.log();
-      console.log('  opencli' + ' — available commands');
+      console.log('  wtscli' + ' — available commands');
       console.log();
 
       if (appsBySite.size > 0) {
@@ -929,12 +937,12 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
 <session> is a required positional: pass the name of the browser session every subcommand should operate on. Reuse the same name across calls to keep the tab/state alive; pick a different name to isolate parallel browser work.
 
 Examples:
-  $ opencli browser work open https://x.com
-  $ opencli browser work open https://x.com --window background
-  $ opencli browser work click 12
-  $ opencli browser work state
-  $ opencli browser work bind
-  $ opencli browser work unbind
+  $ wtscli browser work open https://x.com
+  $ wtscli browser work open https://x.com --window background
+  $ wtscli browser work click 12
+  $ wtscli browser work state
+  $ wtscli browser work bind
+  $ wtscli browser work unbind
 `);
   const originalBrowserDescription = browser.description();
 
@@ -1001,7 +1009,7 @@ Examples:
       error: {
         code: 'javascript_dialog_open',
         message,
-        hint: 'Handle the modal first: opencli browser dialog accept (or dismiss). Use --text for prompt dialogs.',
+        hint: 'Handle the modal first: wtscli browser dialog accept (or dismiss). Use --text for prompt dialogs.',
       },
     }, null, 2));
   }
@@ -1672,7 +1680,7 @@ Examples:
           error: {
             code: 'usage_error',
             message: '--css <selector> or a semantic locator flag is required',
-            hint: 'Examples: opencli browser find --css ".btn.primary"; opencli browser find --role button --name Save',
+            hint: 'Examples: wtscli browser find --css ".btn.primary"; wtscli browser find --role button --name Save',
           },
         }, null, 2));
         process.exitCode = EXIT_CODES.USAGE_ERROR;
@@ -1963,7 +1971,7 @@ Examples:
         error: {
           code: 'usage_error',
           message: 'At least one file path is required.',
-          hint: 'Example: opencli browser upload "input[type=file]" ./receipt.pdf',
+          hint: 'Example: wtscli browser upload "input[type=file]" ./receipt.pdf',
         },
       };
     }
@@ -2554,7 +2562,7 @@ Examples:
   // Default output is JSON (agent-native). Each entry carries a stable `key`
   // (GraphQL operationName or `METHOD host+pathname`) so agents can fetch
   // full bodies with `--detail <key>` even after subsequent commands.
-  // Captures are persisted per browser session under ~/.opencli/cache/browser-network/.
+  // Captures are persisted per browser session under ~/.seektalent/wtscli/cache/browser-network/.
 
   addBrowserTabOption(browser.command('network'))
     .option('--detail <key>', 'Emit full body for the entry with this key')
@@ -2793,7 +2801,7 @@ Examples:
 
   browser.command('init')
     .argument('<name>', 'Adapter name in site/command format (e.g. hn/top)')
-    .description('Generate adapter scaffold in ~/.opencli/clis/')
+    .description('Generate adapter scaffold in ~/.seektalent/wtscli/clis/')
     .action(async (name: string) => {
       try {
         const parts = name.split('/');
@@ -2812,7 +2820,7 @@ Examples:
         const os = await import('node:os');
         const fs = await import('node:fs');
         const path = await import('node:path');
-        const dir = path.join(os.homedir(), '.opencli', 'clis', site);
+        const dir = path.join(getWtscliConfigDir(), 'clis', site);
         const filePath = path.join(dir, `${command}.js`);
 
         if (fs.existsSync(filePath)) {
@@ -2829,7 +2837,7 @@ cli({
   name: '${command}',
   description: '', // TODO: describe what this command does
   access: 'read',  // TODO: 'read' for queries, 'write' for remote/account state changes
-  example: 'opencli ${site} ${command} -f yaml',
+  example: 'wtscli ${site} ${command} -f yaml',
   domain: '${domain}',
   strategy: Strategy.PUBLIC, // TODO: PUBLIC (no auth), COOKIE (needs login), UI (DOM interaction)
   browser: false,            // TODO: set true if needs browser
@@ -2848,8 +2856,8 @@ cli({
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(filePath, template, 'utf-8');
         console.log(`Created: ${filePath}`);
-        console.log('First time on this site? Run: opencli browser analyze <url>');
-        console.log(`Edit the file to implement your adapter, then run: opencli browser verify ${name}`);
+        console.log('First time on this site? Run: wtscli browser analyze <url>');
+        console.log(`Edit the file to implement your adapter, then run: wtscli browser verify ${name}`);
       } catch (err) {
         console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -2860,13 +2868,13 @@ cli({
 
   browser.command('verify')
     .argument('<name>', 'Adapter name in site/command format (e.g. hn/top)')
-    .option('--write-fixture', 'Write a starter fixture to ~/.opencli/sites/<site>/verify/<command>.json if none exists')
+    .option('--write-fixture', 'Write a starter fixture to ~/.seektalent/wtscli/sites/<site>/verify/<command>.json if none exists')
     .option('--update-fixture', 'Overwrite an existing fixture with one derived from current output')
     .option('--no-fixture', 'Ignore any fixture file for this run (no value-level validation)')
-    .option('--strict-memory', 'Fail (not just warn) when ~/.opencli/sites/<site>/endpoints.json or notes.md is missing')
+    .option('--strict-memory', 'Fail (not just warn) when ~/.seektalent/wtscli/sites/<site>/endpoints.json or notes.md is missing')
     .option('--seed-args <value>', 'Seed args when no fixture exists; use JSON array/object for multiple args or flags')
     .option('--trace <mode>', 'Trace capture for the adapter subprocess: off, on, retain-on-failure', 'off')
-    .description('Execute an adapter and validate output; uses fixture at ~/.opencli/sites/<site>/verify/<cmd>.json when present')
+    .description('Execute an adapter and validate output; uses fixture at ~/.seektalent/wtscli/sites/<site>/verify/<cmd>.json when present')
     .action(async (name: string, opts: { fixture?: boolean; writeFixture?: boolean; updateFixture?: boolean; strictMemory?: boolean; seedArgs?: string; trace?: string } = {}) => {
       try {
         const parts = name.split('/');
@@ -2880,10 +2888,10 @@ cli({
 
         const { execFileSync } = await import('node:child_process');
         const { loadFixture, writeFixture, deriveFixture, validateRows, validateRowShape, fixturePath, expandFixtureArgs, parseSeedArgs } = await import('./browser/verify-fixture.js');
-        const filePath = path.join(os.homedir(), '.opencli', 'clis', site, `${command}.js`);
+        const filePath = path.join(getWtscliConfigDir(), 'clis', site, `${command}.js`);
         if (!fs.existsSync(filePath)) {
           console.error(`Adapter not found: ${filePath}`);
-          console.error(`Run "opencli browser init ${name}" to create it.`);
+          console.error(`Run "wtscli browser init ${name}" to create it.`);
           process.exitCode = EXIT_CODES.GENERIC_ERROR;
           return;
         }
@@ -2922,7 +2930,7 @@ cli({
             ...(invocation.shell ? { shell: true } : {}),
           });
         } catch (err) {
-          console.log(`  Executing: opencli ${site} ${command} ${argDisplay}\n`);
+          console.log(`  Executing: wtscli ${site} ${command} ${argDisplay}\n`);
           const execErr = err as { stdout?: string | Buffer; stderr?: string | Buffer };
           if (execErr.stdout) console.log(String(execErr.stdout));
           if (execErr.stderr) console.error(String(execErr.stderr).slice(0, 500));
@@ -2931,7 +2939,7 @@ cli({
           return;
         }
 
-        console.log(`  Executing: opencli ${site} ${command} ${argDisplay}\n`);
+        console.log(`  Executing: wtscli ${site} ${command} ${argDisplay}\n`);
 
         let rows: Record<string, unknown>[];
         try {
@@ -3026,7 +3034,7 @@ cli({
 
   program
     .command('doctor')
-    .description('Diagnose opencli browser bridge connectivity')
+    .description('Diagnose WTSCLI browser bridge connectivity')
     .option('-v, --verbose', 'Debug output')
     .action(async (opts) => {
       applyVerbose(opts);
@@ -3045,7 +3053,7 @@ cli({
 
   // ── Plugin management ──────────────────────────────────────────────────────
 
-  const pluginCmd = program.command('plugin').description('Manage opencli plugins');
+  const pluginCmd = program.command('plugin').description('Manage WTSCLI plugins');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalPluginDescription = pluginCmd.description();
 
@@ -3160,15 +3168,15 @@ cli({
       const plugins = listPlugins();
       if (plugins.length === 0) {
         console.log('  No plugins installed.');
-        console.log('  Install one with: opencli plugin install github:user/repo');
+        console.log('  Install one with: wtscli plugin install github:user/repo');
         return;
       }
       if (opts.format === 'json') {
         renderOutput(plugins, {
           fmt: 'json',
           columns: ['name', 'commands', 'source'],
-          title: 'opencli/plugins',
-          source: 'opencli plugin list',
+          title: 'wtscli/plugins',
+          source: 'wtscli plugin list',
         });
         return;
       }
@@ -3232,8 +3240,8 @@ cli({
         console.log();
         console.log('  Next steps:');
         console.log(`    cd ${result.dir}`);
-        console.log(`    opencli plugin install file://${result.dir}`);
-        console.log(`    opencli ${name} hello`);
+        console.log(`    wtscli plugin install file://${result.dir}`);
+        console.log(`    wtscli ${name} hello`);
       } catch (err) {
         console.error(`Error: ${getErrorMessage(err)}`);
         process.exitCode = EXIT_CODES.GENERIC_ERROR;
@@ -3250,7 +3258,7 @@ cli({
     .description('Show which sites have local overrides vs using official baseline')
     .action(async () => {
       const os = await import('node:os');
-      const userClisDir = path.join(os.homedir(), '.opencli', 'clis');
+      const userClisDir = path.join(getWtscliConfigDir(), 'clis');
       const builtinClisDir = BUILTIN_CLIS;
       try {
         const userEntries = await fs.promises.readdir(userClisDir, { withFileTypes: true });
@@ -3266,7 +3274,7 @@ cli({
           return;
         }
 
-        console.log(`Local overrides in ~/.opencli/clis/ (${userSites.length} sites):\n`);
+        console.log(`Local overrides in ~/.seektalent/wtscli/clis/ (${userSites.length} sites):\n`);
         for (const site of userSites) {
           const isOfficial = builtinSites.includes(site);
           const label = isOfficial ? 'override' : 'custom';
@@ -3280,11 +3288,11 @@ cli({
 
   adapterCmd
     .command('eject')
-    .description('Copy an official adapter to ~/.opencli/clis/ for local editing')
+    .description('Copy an official adapter to ~/.seektalent/wtscli/clis/ for local editing')
     .argument('<site>', 'Site name (e.g. twitter, bilibili)')
     .action(async (site: string) => {
       const os = await import('node:os');
-      const userClisDir = path.join(os.homedir(), '.opencli', 'clis');
+      const userClisDir = path.join(getWtscliConfigDir(), 'clis');
       const builtinSiteDir = path.join(BUILTIN_CLIS, site);
       const userSiteDir = path.join(userClisDir, site);
 
@@ -3298,13 +3306,13 @@ cli({
 
       try {
         await fs.promises.access(userSiteDir);
-        console.error(`Site "${site}" already exists in ~/.opencli/clis/. Use "opencli adapter reset ${site}" first to restore official version.`);
+        console.error(`Site "${site}" already exists in ~/.seektalent/wtscli/clis/. Use "wtscli adapter reset ${site}" first to restore official version.`);
         process.exitCode = EXIT_CODES.USAGE_ERROR;
         return;
       } catch { /* good, doesn't exist yet */ }
 
       fs.cpSync(builtinSiteDir, userSiteDir, { recursive: true });
-      console.log(`✅ Ejected "${site}" to ~/.opencli/clis/${site}/`);
+      console.log(`✅ Ejected "${site}" to ~/.seektalent/wtscli/clis/${site}/`);
       console.log('You can now edit the adapter files. Changes take effect immediately.');
       console.log('Note: Official updates to this adapter will overwrite your changes.');
     });
@@ -3316,7 +3324,7 @@ cli({
     .option('--all', 'Reset all local overrides')
     .action(async (site: string | undefined, opts: { all?: boolean }) => {
       const os = await import('node:os');
-      const userClisDir = path.join(os.homedir(), '.opencli', 'clis');
+      const userClisDir = path.join(getWtscliConfigDir(), 'clis');
 
       if (opts.all) {
         try {
@@ -3370,17 +3378,17 @@ cli({
       const config = loadProfileConfig();
       const profiles = status?.profiles ?? [];
       if (!status) {
-        console.log('Daemon is not running. Run opencli doctor after opening Chrome.');
+        console.log('Daemon is not running. Run wtscli doctor after opening Chrome.');
         return;
       }
       if (isDaemonStale(status, PKG_VERSION) || !Array.isArray(status.profiles)) {
         console.log(`Daemon ${formatDaemonVersion(status)} is stale for CLI v${PKG_VERSION}.`);
-        console.log('Run: opencli daemon restart');
+        console.log('Run: wtscli daemon restart');
         return;
       }
       if (profiles.length === 0) {
         console.log('No Browser Bridge profiles connected.');
-        console.log('Open a Chrome profile with the OpenCLI extension installed, then run opencli profile list again.');
+        console.log('Open a Chrome profile with the WTSCLI extension installed, then run wtscli profile list again.');
         return;
       }
 
@@ -3414,7 +3422,7 @@ cli({
   profileCmd
     .command('rename')
     .description('Assign a local alias to a connected Browser Bridge profile')
-    .argument('<contextId>', 'Profile contextId from opencli profile list')
+    .argument('<contextId>', 'Profile contextId from wtscli profile list')
     .argument('<alias>', 'Local alias, e.g. work or personal')
     .action((contextId: string, alias: string) => {
       try {
@@ -3441,7 +3449,7 @@ cli({
     });
 
   // ── Built-in: daemon ──────────────────────────────────────────────────────
-  const daemonCmd = program.command('daemon').description('Manage the opencli daemon');
+  const daemonCmd = program.command('daemon').description('Manage the WTSCLI daemon');
   // Snapshot before applyRootSubcommandSummaries() rewrites .description() to a child-name listing.
   const originalDaemonDescription = daemonCmd.description();
   daemonCmd
@@ -3507,8 +3515,8 @@ cli({
       renderOutput(rows, {
         fmt: opts.format,
         columns: ['name', 'package', 'binary', 'installed', 'description', 'homepage', 'tags'],
-        title: 'opencli/external/list',
-        source: 'opencli external list',
+        title: 'wtscli/external/list',
+        source: 'wtscli external list',
       });
     });
 
@@ -3622,7 +3630,7 @@ cli({
     const binary = operands[0];
     console.error(`error: unknown command '${binary}'`);
     if (isBinaryInstalled(binary)) {
-      console.error(`  Tip: '${binary}' exists on your PATH. Use 'opencli external register ${binary}' to add it as an external CLI.`);
+      console.error(`  Tip: '${binary}' exists on your PATH. Use 'wtscli external register ${binary}' to add it as an external CLI.`);
     }
     program.outputHelp();
     process.exitCode = EXIT_CODES.USAGE_ERROR;
@@ -3669,7 +3677,7 @@ export function resolveBrowserVerifyInvocation(opts: {
 
   const sourceEntry = path.join(projectRoot, 'src', 'main.ts');
   if (!fileExists(sourceEntry)) {
-    throw new Error(`Could not find opencli entrypoint under ${projectRoot}. Expected built entry from package.json or src/main.ts.`);
+    throw new Error(`Could not find wtscli entrypoint under ${projectRoot}. Expected built entry from package.json or src/main.ts.`);
   }
 
   const localTsxBin = path.join(projectRoot, 'node_modules', '.bin', platform === 'win32' ? 'tsx.cmd' : 'tsx');

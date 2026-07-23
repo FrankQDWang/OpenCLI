@@ -9,7 +9,6 @@
  */
 
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { type InternalCliCommand, Strategy, registerCommand } from './registry.js';
@@ -17,12 +16,13 @@ import { getErrorMessage } from './errors.js';
 import { log } from './logger.js';
 import type { ManifestEntry } from './manifest-types.js';
 import { findPackageRoot, getCliManifestPath } from './package-paths.js';
+import { getWtscliConfigDir } from './runtime-identity.js';
 
-/** User runtime directory: ~/.opencli */
-export const USER_OPENCLI_DIR = path.join(os.homedir(), '.opencli');
-/** User CLIs directory: ~/.opencli/clis */
+/** WTSCLI-owned user runtime directory. */
+export const USER_OPENCLI_DIR = getWtscliConfigDir();
+/** User CLIs directory: ~/.seektalent/wtscli/clis */
 export const USER_CLIS_DIR = path.join(USER_OPENCLI_DIR, 'clis');
-/** Plugins directory: ~/.opencli/plugins/ */
+/** Plugins directory: ~/.seektalent/wtscli/plugins/ */
 export const PLUGINS_DIR = path.join(USER_OPENCLI_DIR, 'plugins');
 /** Matches files that register commands via cli() or lifecycle hooks */
 const PLUGIN_MODULE_PATTERN = /\b(?:cli|registerSiteAuthCommands|onStartup|onBeforeExecute|onAfterExecute)\s*\(/;
@@ -36,8 +36,8 @@ function parseStrategy(rawStrategy: string | undefined, fallback: Strategy = Str
 const PACKAGE_ROOT = findPackageRoot(fileURLToPath(import.meta.url));
 
 /**
- * Ensure ~/.opencli/node_modules/@jackwener/opencli symlink exists so that
- * user CLIs in ~/.opencli/clis/ can `import { cli } from '@jackwener/opencli/registry'`.
+ * Ensure the WTSCLI-owned runtime has an internal upstream-provenance shim so
+ * user CLIs can keep importing the inherited public module specifier.
  *
  * This is the sole resolution mechanism — adapters use package exports
  * (e.g. `@jackwener/opencli/registry`, `@jackwener/opencli/errors`) and
@@ -46,9 +46,9 @@ const PACKAGE_ROOT = findPackageRoot(fileURLToPath(import.meta.url));
 export async function ensureUserCliCompatShims(baseDir: string = USER_OPENCLI_DIR): Promise<void> {
   await fs.promises.mkdir(baseDir, { recursive: true });
 
-  // package.json for ESM resolution in ~/.opencli/
+  // package.json for ESM resolution in the WTSCLI state directory.
   const pkgJsonPath = path.join(baseDir, 'package.json');
-  const pkgJsonContent = `${JSON.stringify({ name: 'opencli-user-runtime', private: true, type: 'module' }, null, 2)}\n`;
+  const pkgJsonContent = `${JSON.stringify({ name: 'wtscli-user-runtime', private: true, type: 'module' }, null, 2)}\n`;
   try {
     const existing = await fs.promises.readFile(pkgJsonPath, 'utf-8');
     if (existing !== pkgJsonContent) await fs.promises.writeFile(pkgJsonPath, pkgJsonContent, 'utf-8');
@@ -80,7 +80,7 @@ export async function ensureUserCliCompatShims(baseDir: string = USER_OPENCLI_DI
 /**
  * Ensure the user adapters directory exists.
  *
- * With smart sync, ~/.opencli/clis/ only holds files that differ from the
+ * With smart sync, ~/.seektalent/wtscli/clis/ only holds files that differ from the
  * package baseline (upstream-synced cache + autofix output + user overrides).
  * Built-in adapters are loaded directly from the installed package.
  */
@@ -183,7 +183,7 @@ async function discoverClisFromFs(dir: string): Promise<void> {
 }
 
 /**
- * Discover and register plugins from ~/.opencli/plugins/.
+ * Discover and register plugins from ~/.seektalent/wtscli/plugins/.
  * Each subdirectory is treated as a plugin (site = directory name).
  * Files inside are scanned flat (no nested site subdirs).
  */
@@ -224,7 +224,7 @@ async function discoverPluginDir(dir: string, site: string): Promise<void> {
       // This typically means esbuild transpilation failed during plugin install.
       log.warn(
         `Plugin ${site}/${file}: no compiled .js found. ` +
-        `Run "opencli plugin update ${site}" to re-transpile, or install esbuild.`
+        `Run "wtscli plugin update ${site}" to re-transpile, or install esbuild.`
       );
     }
   }));

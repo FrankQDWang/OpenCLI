@@ -8,7 +8,7 @@ on:
       - 'extension/**'
       - '.github/workflows/build-extension.yml'
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "seektalent/1.8.6" ]
     paths:
       - 'extension/**'
       - '.github/workflows/build-extension.yml'
@@ -46,20 +46,20 @@ jobs:
         run: |
           EXT_VERSION=$(node -p "require('./extension/package.json').version")
           cd extension-package
-          zip -r ../opencli-extension-v${EXT_VERSION}.zip .
+          zip -r ../wtscli-extension-v${EXT_VERSION}.zip .
 
       - name: Upload Artifacts (Action Run)
         uses: actions/upload-artifact@v7
         with:
-          name: opencli-extension-build
-          path: opencli-extension-v*.zip
+          name: wtscli-extension-build
+          path: wtscli-extension-v*.zip
           retention-days: 7
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3.0.0
         with:
-          files: opencli-extension-v*.zip
+          files: wtscli-extension-v*.zip
           draft: false
           prerelease: false
         env:

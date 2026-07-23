@@ -112,7 +112,7 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
       const verbose = optionsRecord.verbose === true;
       let format = typeof optionsRecord.format === 'string' ? optionsRecord.format : 'table';
       const formatExplicit = subCmd.getOptionValueSource('format') === 'cli';
-      if (verbose) process.env.OPENCLI_VERBOSE = '1';
+      if (verbose) process.env.WTSCLI_VERBOSE = '1';
       const globals = typeof subCmd.optsWithGlobals === 'function' ? subCmd.optsWithGlobals() as Record<string, unknown> : {};
       const result = await executeCommand(cmd, kwargs, verbose, {
         prepared: true,
@@ -165,7 +165,7 @@ function emitAutoFixHint(envelope: string, cmdName: string, traceMode: unknown):
   const runnable = cmdName.replace('/', ' ');
   return envelope
     + `# AutoFix: re-run with --trace=retain-on-failure for trace artifact\n`
-    + `# opencli ${runnable} --trace retain-on-failure\n`;
+    + `# wtscli ${runnable} --trace retain-on-failure\n`;
 }
 
 function renderError(err: unknown, cmdName: string, verbose: boolean, traceMode?: unknown): void {

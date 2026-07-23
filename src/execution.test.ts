@@ -566,8 +566,8 @@ describe('executeCommand — non-browser timeout', () => {
 
   it('exports a profile-scoped trace artifact on browser command failure when requested', async () => {
     const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opencli-exec-trace-'));
-    const prevConfigDir = process.env.OPENCLI_CONFIG_DIR;
-    process.env.OPENCLI_CONFIG_DIR = baseDir;
+    const prevConfigDir = process.env.WTSCLI_CONFIG_DIR;
+    process.env.WTSCLI_CONFIG_DIR = baseDir;
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     const mockPage = {
@@ -628,8 +628,8 @@ describe('executeCommand — non-browser timeout', () => {
       });
       expect(closeWindow).toHaveBeenCalledTimes(1);
     } finally {
-      if (prevConfigDir === undefined) delete process.env.OPENCLI_CONFIG_DIR;
-      else process.env.OPENCLI_CONFIG_DIR = prevConfigDir;
+      if (prevConfigDir === undefined) delete process.env.WTSCLI_CONFIG_DIR;
+      else process.env.WTSCLI_CONFIG_DIR = prevConfigDir;
       stderrSpy.mockRestore();
       fs.rmSync(baseDir, { recursive: true, force: true });
       vi.restoreAllMocks();
@@ -638,8 +638,8 @@ describe('executeCommand — non-browser timeout', () => {
 
   it('exports a trace receipt on browser command success when trace is on', async () => {
     const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opencli-exec-trace-success-'));
-    const prevConfigDir = process.env.OPENCLI_CONFIG_DIR;
-    process.env.OPENCLI_CONFIG_DIR = baseDir;
+    const prevConfigDir = process.env.WTSCLI_CONFIG_DIR;
+    process.env.WTSCLI_CONFIG_DIR = baseDir;
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const onTraceExport = vi.fn();
     const closeWindow = vi.fn().mockResolvedValue(undefined);
@@ -670,7 +670,7 @@ describe('executeCommand — non-browser timeout', () => {
       await expect(executeCommand(cmd, {}, false, { trace: 'on', onTraceExport })).resolves.toEqual([{ ok: true }]);
 
       const stderr = stderrSpy.mock.calls.flat().join('\n');
-      expect(stderr).toContain('OpenCLI trace artifact:');
+      expect(stderr).toContain('WTSCLI trace artifact:');
       const tracesRoot = path.join(baseDir, 'profiles', 'default', 'traces');
       const traceId = fs.readdirSync(tracesRoot)[0];
       const receipt = JSON.parse(fs.readFileSync(path.join(tracesRoot, traceId, 'receipt.json'), 'utf-8'));
@@ -687,8 +687,8 @@ describe('executeCommand — non-browser timeout', () => {
       }));
       expect(closeWindow).toHaveBeenCalledTimes(1);
     } finally {
-      if (prevConfigDir === undefined) delete process.env.OPENCLI_CONFIG_DIR;
-      else process.env.OPENCLI_CONFIG_DIR = prevConfigDir;
+      if (prevConfigDir === undefined) delete process.env.WTSCLI_CONFIG_DIR;
+      else process.env.WTSCLI_CONFIG_DIR = prevConfigDir;
       stderrSpy.mockRestore();
       fs.rmSync(baseDir, { recursive: true, force: true });
       vi.restoreAllMocks();
@@ -699,8 +699,8 @@ describe('executeCommand — non-browser timeout', () => {
     const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opencli-exec-trace-fail-'));
     const blockedPath = path.join(baseDir, 'not-a-dir');
     fs.writeFileSync(blockedPath, 'file');
-    const prevConfigDir = process.env.OPENCLI_CONFIG_DIR;
-    process.env.OPENCLI_CONFIG_DIR = blockedPath;
+    const prevConfigDir = process.env.WTSCLI_CONFIG_DIR;
+    process.env.WTSCLI_CONFIG_DIR = blockedPath;
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const mockPage = {
       closeWindow: vi.fn().mockResolvedValue(undefined),
@@ -729,8 +729,8 @@ describe('executeCommand — non-browser timeout', () => {
       await expect(executeCommand(cmd, {}, false, { trace: 'retain-on-failure' })).rejects.toThrow('adapter failure');
       expect(stderrSpy.mock.calls.flat().join('\n')).toContain('[trace] Failed to export trace artifact');
     } finally {
-      if (prevConfigDir === undefined) delete process.env.OPENCLI_CONFIG_DIR;
-      else process.env.OPENCLI_CONFIG_DIR = prevConfigDir;
+      if (prevConfigDir === undefined) delete process.env.WTSCLI_CONFIG_DIR;
+      else process.env.WTSCLI_CONFIG_DIR = prevConfigDir;
       stderrSpy.mockRestore();
       fs.rmSync(baseDir, { recursive: true, force: true });
       vi.restoreAllMocks();

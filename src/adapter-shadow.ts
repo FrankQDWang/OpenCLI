@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { getWtscliConfigDir } from './runtime-identity.js';
 import { fileURLToPath } from 'node:url';
 import type { ManifestEntry } from './manifest-types.js';
 import { findPackageRoot, getCliManifestPath } from './package-paths.js';
@@ -44,7 +44,7 @@ function loadBuiltinCommandFiles(builtinClisDir: string): Set<string> {
 }
 
 export function findShadowedUserAdapters(opts: AdapterShadowOptions = {}): AdapterShadow[] {
-  const userClisDir = opts.userClisDir ?? path.join(os.homedir(), '.opencli', 'clis');
+  const userClisDir = opts.userClisDir ?? path.join(getWtscliConfigDir(), 'clis');
   const builtinClisDir = opts.builtinClisDir ?? defaultBuiltinClisDir();
   const builtinCommandFiles = loadBuiltinCommandFiles(builtinClisDir);
   const shadows: AdapterShadow[] = [];
@@ -82,6 +82,6 @@ export function formatAdapterShadowIssue(shadows: AdapterShadow[]): string {
   if (shadows.length > visible.length) {
     lines.push(`  ... and ${shadows.length - visible.length} more`);
   }
-  lines.push('Remove the local ~/.opencli/clis copy, or run opencli adapter reset <site>, when you want packaged updates.');
+  lines.push('Remove the local ~/.seektalent/wtscli/clis copy, or run wtscli adapter reset <site>, when you want packaged updates.');
   return lines.join('\n');
 }

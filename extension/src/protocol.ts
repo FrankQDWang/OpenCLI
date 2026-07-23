@@ -1,9 +1,11 @@
 /**
- * opencli browser protocol — shared types between daemon, extension, and CLI.
+ * WTSCLI browser protocol — shared types between daemon, extension, and CLI.
  *
  * 5 actions: exec, navigate, tabs, cookies, screenshot.
  * Everything else is just JS code sent via 'exec'.
  */
+
+import { EXTENSION_BRIDGE_IDENTITY } from './bridge-identity.js';
 
 export type Action =
   | 'exec'
@@ -130,11 +132,15 @@ export interface Result {
 }
 
 /** Default daemon port */
-export const DAEMON_PORT = 19825;
-export const DAEMON_HOST = 'localhost';
+export const DAEMON_PORT = EXTENSION_BRIDGE_IDENTITY.runtimeIdentity.endpoint.port;
+export const DAEMON_HOST = EXTENSION_BRIDGE_IDENTITY.runtimeIdentity.endpoint.host;
 export const DAEMON_WS_URL = `ws://${DAEMON_HOST}:${DAEMON_PORT}/ext`;
 /** Lightweight health-check endpoint — probed before each WebSocket attempt. */
 export const DAEMON_PING_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/ping`;
+export const DAEMON_REQUEST_MARKER =
+  EXTENSION_BRIDGE_IDENTITY.runtimeIdentity.transport.requestHeader;
+export const DAEMON_RESPONSE_MARKER =
+  EXTENSION_BRIDGE_IDENTITY.runtimeIdentity.transport.responseHeader;
 
 /** Base reconnect delay for extension WebSocket (ms) */
 export const WS_RECONNECT_BASE_DELAY = 2000;

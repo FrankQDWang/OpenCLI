@@ -138,7 +138,7 @@ function validateCommand(cmd: CliCommand): CommandValidationResult {
 
 export function renderValidationReport(report: ValidationReport): string {
   const lines = [
-    `opencli validate: ${report.ok ? 'PASS' : 'FAIL'}`,
+    `wtscli validate: ${report.ok ? 'PASS' : 'FAIL'}`,
     `Checked ${report.commands} command(s)`,
     `Errors: ${report.errors}  Warnings: ${report.warnings}`,
   ];

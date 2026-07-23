@@ -9,6 +9,7 @@ import {
   setDaemonCommandTimeoutSeconds,
 } from './daemon-client.js';
 import * as daemonLifecycle from './daemon-lifecycle.js';
+import { PKG_VERSION } from '../version.js';
 
 describe('daemon-client', () => {
   beforeEach(() => {
@@ -20,7 +21,7 @@ describe('daemon-client', () => {
     vi.unstubAllEnvs();
   });
 
-  it('fetchDaemonStatus sends the shared status request and returns parsed data', async () => {
+  it('fetchDaemonStatus sends the WTS-owned status request to the isolated endpoint', async () => {
     const status = {
       ok: true,
       pid: 123,
@@ -29,7 +30,7 @@ describe('daemon-client', () => {
       extensionVersion: '1.2.3',
       pending: 0,
       memoryMB: 32,
-      port: 19825,
+      port: 19826,
     };
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValue({
@@ -39,17 +40,44 @@ describe('daemon-client', () => {
 
     await expect(fetchDaemonStatus()).resolves.toEqual(status);
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\/status$/),
+      expect.stringMatching(/^http:\/\/127\.0\.0\.1:19826\/status$/),
       expect.objectContaining({
-        headers: expect.objectContaining({ 'X-OpenCLI': '1' }),
+        headers: expect.objectContaining({ 'X-WTSCLI': '1' }),
       }),
     );
+  });
+
+  it('classifies a compatible-looking response without the WTS marker as a foreign process', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      pid: 123,
+      daemonVersion: PKG_VERSION,
+      extensionConnected: true,
+      port: 19826,
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    await expect(fetchDaemonStatus()).rejects.toMatchObject({
+      code: 'port_occupied_by_foreign_process',
+    });
   });
 
   it('fetchDaemonStatus returns null on network failure', async () => {
     vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
 
     await expect(fetchDaemonStatus()).resolves.toBeNull();
+  });
+
+  it('classifies a listener that resets the WTS identity handshake as foreign', async () => {
+    const cause = Object.assign(new Error('socket reset'), { code: 'ECONNRESET' });
+    vi.mocked(fetch).mockRejectedValue(new TypeError('fetch failed', { cause }));
+
+    await expect(fetchDaemonStatus()).rejects.toMatchObject({
+      code: 'port_occupied_by_foreign_process',
+      hint: expect.stringContaining('left untouched'),
+    });
   });
 
   it('requestDaemonShutdown POSTs to the shared shutdown endpoint', async () => {
@@ -61,7 +89,7 @@ describe('daemon-client', () => {
       expect.stringMatching(/\/shutdown$/),
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ 'X-OpenCLI': '1' }),
+        headers: expect.objectContaining({ 'X-WTSCLI': '1' }),
       }),
     );
   });
@@ -80,7 +108,7 @@ describe('daemon-client', () => {
       extensionConnected: false,
       pending: 0,
       memoryMB: 16,
-      port: 19825,
+      port: 19826,
     };
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
@@ -99,7 +127,7 @@ describe('daemon-client', () => {
       extensionVersion: '1.2.3',
       pending: 0,
       memoryMB: 32,
-      port: 19825,
+      port: 19826,
     };
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
@@ -122,7 +150,7 @@ describe('daemon-client', () => {
       ],
       pending: 0,
       memoryMB: 32,
-      port: 19825,
+      port: 19826,
     };
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
@@ -142,7 +170,7 @@ describe('daemon-client', () => {
         extensionConnected: true,
         pending: 0,
         memoryMB: 1,
-        port: 19825,
+        port: 19826,
       }),
     } as Response);
 
@@ -151,9 +179,9 @@ describe('daemon-client', () => {
     expect(vi.mocked(fetch).mock.calls[0][0]).toMatch(/\/status\?contextId=work$/);
   });
 
-  it('rejects OPENCLI_DAEMON_PORT so CLI and extension cannot split bridge ports', async () => {
+  it('rejects a non-default WTSCLI_DAEMON_PORT so CLI and extension cannot split bridge ports', async () => {
     vi.resetModules();
-    vi.stubEnv('OPENCLI_DAEMON_PORT', '19999');
+    vi.stubEnv('WTSCLI_DAEMON_PORT', '19999');
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({
@@ -163,19 +191,19 @@ describe('daemon-client', () => {
         extensionConnected: true,
         pending: 0,
         memoryMB: 1,
-        port: 19825,
+        port: 19826,
       }),
     } as Response);
 
     const freshClient = await import('./daemon-client.js');
-    await expect(freshClient.fetchDaemonStatus()).rejects.toThrow('OPENCLI_DAEMON_PORT is no longer supported');
+    await expect(freshClient.fetchDaemonStatus()).rejects.toThrow('WTSCLI_DAEMON_PORT is fixed and cannot be overridden');
 
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
   });
 
-  it('tolerates OPENCLI_DAEMON_PORT when it equals the default port (launchers inject it, #2068)', async () => {
+  it('tolerates WTSCLI_DAEMON_PORT when it equals the fixed WTS endpoint', async () => {
     vi.resetModules();
-    vi.stubEnv('OPENCLI_DAEMON_PORT', '19825');
+    vi.stubEnv('WTSCLI_DAEMON_PORT', '19826');
     const status = {
       ok: true,
       pid: 1,
@@ -183,7 +211,7 @@ describe('daemon-client', () => {
       extensionConnected: true,
       pending: 0,
       memoryMB: 1,
-      port: 19825,
+      port: 19826,
     };
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
@@ -215,8 +243,8 @@ describe('daemon-client', () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 
-  it('sendCommand forwards OPENCLI_PROFILE as a hard contextId requirement', async () => {
-    vi.stubEnv('OPENCLI_PROFILE', 'work');
+  it('sendCommand forwards WTSCLI_PROFILE as a hard contextId requirement', async () => {
+    vi.stubEnv('WTSCLI_PROFILE', 'work');
     vi.spyOn(Date, 'now').mockReturnValue(1_763_000_000_000);
     vi.mocked(fetch).mockResolvedValue({
       status: 200,
@@ -239,8 +267,8 @@ describe('daemon-client', () => {
       path.join(configDir, 'browser-profiles.json'),
       JSON.stringify({ version: 1, aliases: {}, defaultContextId: 'zvypsyje' }),
     );
-    vi.stubEnv('OPENCLI_CONFIG_DIR', configDir);
-    vi.stubEnv('OPENCLI_PROFILE', '');
+    vi.stubEnv('WTSCLI_CONFIG_DIR', configDir);
+    vi.stubEnv('WTSCLI_PROFILE', '');
     try {
       vi.mocked(fetch).mockResolvedValue({
         status: 200,
@@ -257,8 +285,8 @@ describe('daemon-client', () => {
     }
   });
 
-  it('sendCommand uses explicit windowMode before OPENCLI_WINDOW env fallback', async () => {
-    vi.stubEnv('OPENCLI_WINDOW', 'foreground');
+  it('sendCommand uses explicit windowMode before WTSCLI_WINDOW env fallback', async () => {
+    vi.stubEnv('WTSCLI_WINDOW', 'foreground');
     vi.mocked(fetch).mockResolvedValue({
       status: 200,
       json: () => Promise.resolve({ id: 'server', ok: true, data: 'ok' }),
@@ -343,7 +371,7 @@ describe('daemon-client', () => {
           ...(extensionVersion && { extensionVersion }),
           pending: 0,
           memoryMB: 0,
-          port: 19825,
+          port: 19826,
         },
       },
       spawnedProcess: null,
@@ -382,7 +410,7 @@ describe('daemon-client', () => {
   it('sendCommand runs full bridge ensure on a pre-connect TypeError (ECONNREFUSED) before resending', async () => {
     const ensureSpy = mockEnsureReady();
     const refused = new TypeError('fetch failed');
-    (refused as { cause?: unknown }).cause = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:19825'), { code: 'ECONNREFUSED' });
+    (refused as { cause?: unknown }).cause = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:19826'), { code: 'ECONNREFUSED' });
     const fetchMock = vi.mocked(fetch);
     fetchMock
       .mockRejectedValueOnce(refused)

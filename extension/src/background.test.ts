@@ -1,4 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EXTENSION_BRIDGE_IDENTITY } from './bridge-identity.js';
+
+function wtsDaemonResponse(body: unknown = { ok: true }): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      [EXTENSION_BRIDGE_IDENTITY.runtimeIdentity.transport.responseHeader.name]:
+        EXTENSION_BRIDGE_IDENTITY.runtimeIdentity.transport.responseHeader.value,
+    },
+  });
+}
 
 type Listener<T extends (...args: any[]) => void> = {
   addListener: any;
@@ -1013,7 +1025,7 @@ describe('background tab isolation', () => {
 
   it('returns the persisted profile contextId from popup status', async () => {
     const { chrome } = createChromeMock();
-    await chrome.storage.local.set({ opencli_context_id_v1: 'abc123xy' });
+    await chrome.storage.local.set({ wtscli_context_id_v1: 'abc123xy' });
     vi.stubGlobal('chrome', chrome);
 
     await import('./background');
@@ -1033,14 +1045,8 @@ describe('background tab isolation', () => {
   it('announces the paired build identity and capabilities in extension hello', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
-    vi.stubGlobal('__OPENCLI_COMPAT_RANGE__', '>=1.8.6 <1.9.0');
-    vi.stubGlobal('__OPENCLI_BRIDGE_IDENTITY__', {
-      implementation: 'seektalent-opencli',
-      bridgeBuildId: 'seektalent-opencli-1.8.6+test',
-      protocolVersion: { major: 1, minor: 0 },
-      capabilities: ['tab.find.v1', 'tab.create-in-existing-window.v1'],
-    });
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
+    vi.stubGlobal('__WTSCLI_COMPAT_RANGE__', '>=0.1.0 <0.2.0');
 
     await import('./background');
     await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
@@ -1051,17 +1057,17 @@ describe('background tab isolation', () => {
     const hello = socket.sent.map((entry) => JSON.parse(entry)).find((entry) => entry.type === 'hello');
     expect(hello).toEqual(expect.objectContaining({
       type: 'hello',
-      implementation: 'seektalent-opencli',
-      bridgeBuildId: 'seektalent-opencli-1.8.6+test',
-      protocolVersion: { major: 1, minor: 0 },
-      capabilities: ['tab.find.v1', 'tab.create-in-existing-window.v1'],
+      implementation: EXTENSION_BRIDGE_IDENTITY.implementation,
+      bridgeBuildId: EXTENSION_BRIDGE_IDENTITY.bridgeBuildId,
+      protocolVersion: EXTENSION_BRIDGE_IDENTITY.protocolVersion,
+      capabilities: EXTENSION_BRIDGE_IDENTITY.capabilities,
     }));
   });
 
   it('keeps the active daemon connection when a superseded WebSocket closes later', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
 
     await import('./background');
     await vi.waitFor(() => {
@@ -1097,7 +1103,7 @@ describe('background tab isolation', () => {
   it('coalesces concurrent daemon connection attempts while the probe is in flight', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
-    const ping = deferred<{ ok: boolean }>();
+    const ping = deferred<Response>();
     const fetchMock = vi.fn(() => ping.promise);
     vi.stubGlobal('fetch', fetchMock);
 
@@ -1113,10 +1119,25 @@ describe('background tab isolation', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(MockWebSocket.instances).toHaveLength(0);
 
-    ping.resolve({ ok: true });
+    ping.resolve(wtsDaemonResponse());
     await vi.waitFor(() => {
       expect(MockWebSocket.instances).toHaveLength(1);
     });
+  });
+
+  it('does not open a WebSocket when the endpoint lacks the WTS transport marker', async () => {
+    const { chrome } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })));
+
+    const mod = await import('./background');
+    mod.__test__.resetReconnectState();
+    await mod.__test__.connectForTest();
+
+    expect(MockWebSocket.instances).toHaveLength(0);
   });
 
   it('uses the production-safe 30s keepalive alarm period', async () => {
@@ -1156,7 +1177,7 @@ describe('background tab isolation', () => {
   it('a successful daemon ping resets the backoff before the WebSocket attempt', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
 
     const mod = await import('./background');
     mod.__test__.resetReconnectState();
@@ -1171,7 +1192,7 @@ describe('background tab isolation', () => {
   it('ignores daemon commands delivered to a superseded WebSocket', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
 
     await import('./background');
     await vi.waitFor(() => {
@@ -1336,7 +1357,7 @@ describe('background tab isolation', () => {
     const { chrome, tabs, groups } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
     await chrome.storage.local.set({
-      opencli_target_lease_registry_v2: {
+      wtscli_target_lease_registry_v2: {
         version: 2,
         contextId: 'user-default',
         ownedContainers: { interactive: { windowId: null }, automation: { windowId: 1 } },
@@ -1367,7 +1388,7 @@ describe('background tab isolation', () => {
     const deadline = Date.now() + 30_000;
     vi.stubGlobal('chrome', chrome);
     await chrome.storage.local.set({
-      opencli_target_lease_registry_v2: {
+      wtscli_target_lease_registry_v2: {
         version: 2,
         contextId: 'user-default',
         ownedContainers: { interactive: { windowId: null }, automation: { windowId: 1 } },
@@ -1418,7 +1439,7 @@ describe('background tab isolation', () => {
       idleDeadlineAt: 0,
     }));
     expect(chrome.alarms.create).toHaveBeenCalledWith(
-      `opencli:lease-idle:${encodeURIComponent(adapterKey('twitter'))}`,
+      `wtscli:lease-idle:${encodeURIComponent(adapterKey('twitter'))}`,
       expect.objectContaining({ when: expect.any(Number) }),
     );
     expect(chrome.windows.remove).not.toHaveBeenCalled();
@@ -1431,7 +1452,7 @@ describe('background tab isolation', () => {
     const deadline = now + 5_000;
     vi.stubGlobal('chrome', chrome);
     await chrome.storage.local.set({
-      opencli_target_lease_registry_v2: {
+      wtscli_target_lease_registry_v2: {
         version: 2,
         contextId: 'user-default',
         ownedContainers: { interactive: { windowId: null }, automation: { windowId: 1 } },
@@ -1454,7 +1475,7 @@ describe('background tab isolation', () => {
     const mod = await import('./background');
     await mod.__test__.reconcileTargetLeaseRegistry();
 
-    const alarmName = `opencli:lease-idle:${encodeURIComponent(adapterKey('twitter'))}`;
+    const alarmName = `wtscli:lease-idle:${encodeURIComponent(adapterKey('twitter'))}`;
     const createCalls = chrome.alarms.create.mock.calls.filter((c: unknown[]) => c[0] === alarmName);
     expect(createCalls.length).toBeGreaterThan(0);
     const scheduledWhen = (createCalls.at(-1)![1] as { when: number }).when;
@@ -1475,7 +1496,7 @@ describe('background tab isolation', () => {
     await mod.__test__.resolveTabId(undefined, adapterKey('alarm'));
 
     const onAlarmListener = chrome.alarms.onAlarm.addListener.mock.calls[0][0];
-    await onAlarmListener({ name: `opencli:lease-idle:${encodeURIComponent(adapterKey('alarm'))}` });
+    await onAlarmListener({ name: `wtscli:lease-idle:${encodeURIComponent(adapterKey('alarm'))}` });
 
     expect(chrome.tabs.update).toHaveBeenCalledWith(1, { url: 'about:blank' });
     expect(chrome.windows.remove).not.toHaveBeenCalled();
@@ -1490,7 +1511,7 @@ describe('background tab isolation', () => {
     await mod.__test__.resolveTabId(undefined, adapterKey('first'));
 
     const onAlarmListener = chrome.alarms.onAlarm.addListener.mock.calls[0][0];
-    await onAlarmListener({ name: `opencli:lease-idle:${encodeURIComponent(adapterKey('first'))}` });
+    await onAlarmListener({ name: `wtscli:lease-idle:${encodeURIComponent(adapterKey('first'))}` });
 
     expect(tabs[0].url).toBe('about:blank');
     expect(chrome.windows.remove).not.toHaveBeenCalled();
@@ -1626,7 +1647,7 @@ describe('background tab isolation', () => {
     const { chrome, tabs, groups } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
     await chrome.storage.local.set({
-      opencli_target_lease_registry_v2: {
+      wtscli_target_lease_registry_v2: {
         version: 2,
         contextId: 'user-default',
         ownedContainers: {
@@ -1654,7 +1675,7 @@ describe('background tab isolation', () => {
     const deadline = Date.now() + 30_000;
     vi.stubGlobal('chrome', chrome);
     await chrome.storage.local.set({
-      opencli_target_lease_registry_v2: {
+      wtscli_target_lease_registry_v2: {
         version: 2,
         contextId: 'user-default',
         ownedContainers: { interactive: { windowId: null }, automation: { windowId: 1, groupId: 99 } },
@@ -1723,7 +1744,7 @@ describe('background tab isolation', () => {
     const { chrome, tabs } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
     await chrome.storage.local.set({
-      opencli_target_lease_registry_v2: {
+      wtscli_target_lease_registry_v2: {
         version: 2,
         contextId: 'user-default',
         ownedContainers: { interactive: { windowId: null }, automation: { windowId: 1, groupId: 99 } },

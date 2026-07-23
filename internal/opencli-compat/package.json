@@ -1,0 +1,22 @@
+{
+  "name": "@jackwener/opencli",
+  "version": "0.0.0-wtscli-internal",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./registry": "./registry.js",
+    "./errors": "./errors.js",
+    "./types": "./types.js",
+    "./utils": "./utils.js",
+    "./logger": "./logger.js",
+    "./launcher": "./launcher.js",
+    "./browser/cdp": "./browser/cdp.js",
+    "./browser/page": "./browser/page.js",
+    "./browser/utils": "./browser/utils.js",
+    "./download": "./download/index.js",
+    "./download/article-download": "./download/article-download.js",
+    "./download/media-download": "./download/media-download.js",
+    "./download/progress": "./download/progress.js",
+    "./pipeline": "./pipeline/index.js"
+  }
+}

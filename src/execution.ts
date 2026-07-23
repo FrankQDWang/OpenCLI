@@ -24,7 +24,7 @@ import type { IPage } from './types.js';
 import { pathToFileURL } from 'node:url';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
+import * as path from 'node:path';
 import { executePipeline } from './pipeline/index.js';
 import { adapterLoadError, ArgumentError, CommandExecutionError, attachTraceReceipt, getErrorMessage } from './errors.js';
 import { shouldUseBrowserSession } from './capabilityRouting.js';
@@ -37,11 +37,12 @@ import { isElectronApp } from './electron-apps.js';
 import { probeCDP, resolveElectronEndpoint } from './launcher.js';
 import { ObservationSession, exportObservationSession, type ObservationExportResult, type ObservationExportStatus } from './observation/index.js';
 import { resolveAdapterSourcePath } from './adapter-source.js';
+import { getWtscliConfigDir } from './runtime-identity.js';
 
 const _loadedModules = new Map<string, Promise<void>>();
 /** Track mtime of loaded user adapter files for hot-reload in daemon mode. */
 const _moduleMtimes = new Map<string, number>();
-const _userClisDir = `${os.homedir()}/.opencli/clis/`;
+const _userClisDir = `${path.join(getWtscliConfigDir(), 'clis')}${path.sep}`;
 
 type TraceMode = 'off' | 'on' | 'retain-on-failure';
 
@@ -239,7 +240,7 @@ export async function executeCommand(
 
       if (electron) {
         // Electron apps: respect manual endpoint override, then try auto-detect
-        const manualEndpoint = process.env.OPENCLI_CDP_ENDPOINT;
+        const manualEndpoint = process.env.WTSCLI_CDP_ENDPOINT;
         if (manualEndpoint) {
           const port = Number(new URL(manualEndpoint).port);
           if (!await probeCDP(port)) {
@@ -255,7 +256,7 @@ export async function executeCommand(
       }
 
       const BrowserFactory = getBrowserFactory(cmd.site);
-      // Requirement vs preference: --profile / OPENCLI_PROFILE route strictly;
+      // Requirement vs preference: --profile / WTSCLI_PROFILE route strictly;
       // the config default is a soft preference the daemon arbitrates.
       const profileSelection = resolveProfileSelection(opts.profile);
       const profileRouting = profileRouteParams(profileSelection);
@@ -466,7 +467,7 @@ function exportTraceArtifact(
     if (status === 'failure' && error !== undefined) {
       attachTraceReceipt(error, trace.receipt);
     } else {
-      process.stderr.write(`OpenCLI trace artifact: ${trace.dir}\n`);
+      process.stderr.write(`WTSCLI trace artifact: ${trace.dir}\n`);
     }
     try {
       onTraceExport?.(trace);
@@ -532,7 +533,7 @@ function normalizeWindowMode(name: string, raw: unknown): BrowserWindowMode | nu
 
 function resolveBrowserWindowMode(defaultMode: BrowserWindowMode = 'background', rawOption?: unknown): BrowserWindowMode {
   return normalizeWindowMode('--window', rawOption)
-    ?? normalizeWindowMode('OPENCLI_WINDOW', process.env.OPENCLI_WINDOW)
+    ?? normalizeWindowMode('WTSCLI_WINDOW', process.env.WTSCLI_WINDOW)
     ?? defaultMode;
 }
 

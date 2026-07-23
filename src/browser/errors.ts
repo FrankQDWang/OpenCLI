@@ -131,8 +131,8 @@ export function formatBrowserConnectError(kind: ConnectFailureKind, detail?: str
   switch (kind) {
     case 'daemon-not-running':
       return new BrowserConnectError(
-        'Cannot connect to opencli daemon.' + (detail ? `\n\n${detail}` : ''),
-        `Run \`opencli doctor\` to diagnose, or \`opencli daemon restart\` to force a fresh daemon. Default port is ${DEFAULT_DAEMON_PORT}.`,
+        'Cannot connect to WTSCLI daemon.' + (detail ? `\n\n${detail}` : ''),
+        `Run \`wtscli doctor\` to diagnose, or \`wtscli daemon restart\` to force a fresh daemon. Default port is ${DEFAULT_DAEMON_PORT}.`,
         kind,
       );
     case 'extension-not-connected':

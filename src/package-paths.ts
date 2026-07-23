@@ -29,8 +29,8 @@ export function getBuiltEntryCandidates(
 
     if (typeof pkg.bin === 'string') {
       candidates.push(path.join(packageRoot, pkg.bin));
-    } else if (pkg.bin && typeof pkg.bin === 'object' && typeof pkg.bin.opencli === 'string') {
-      candidates.push(path.join(packageRoot, pkg.bin.opencli));
+    } else if (pkg.bin && typeof pkg.bin === 'object' && typeof pkg.bin.wtscli === 'string') {
+      candidates.push(path.join(packageRoot, pkg.bin.wtscli));
     }
 
     if (typeof pkg.main === 'string') {

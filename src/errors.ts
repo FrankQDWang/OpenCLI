@@ -20,6 +20,7 @@
  * 130   Interrupted by Ctrl-C           (set by tui.ts SIGINT handler)
  */
 import type { ObservationTraceReceipt } from './observation/events.js';
+import { DEFAULT_DAEMON_HOST, DEFAULT_DAEMON_PORT } from './runtime-identity.js';
 
 // ── Exit code table ──────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ export class CliError extends Error {
   }
 }
 
-const TRACE_RECEIPT_SYMBOL = Symbol.for('opencli.traceReceipt');
+const TRACE_RECEIPT_SYMBOL = Symbol.for('wtscli.traceReceipt');
 
 export function attachTraceReceipt(err: unknown, receipt: ObservationTraceReceipt): void {
   if (!err || (typeof err !== 'object' && typeof err !== 'function')) return;
@@ -79,13 +80,24 @@ export function getTraceReceipt(err: unknown): ObservationTraceReceipt | undefin
 
 // ── Typed subclasses ─────────────────────────────────────────────────────────
 
-export type BrowserConnectKind = 'daemon-not-running' | 'extension-not-connected' | 'profile-required' | 'profile-disconnected' | 'command-failed' | 'unknown';
+export type BrowserConnectKind = 'daemon-not-running' | 'foreign-daemon' | 'extension-not-connected' | 'profile-required' | 'profile-disconnected' | 'command-failed' | 'unknown';
 
 export class BrowserConnectError extends CliError {
   readonly kind: BrowserConnectKind;
   constructor(message: string, hint?: string, kind: BrowserConnectKind = 'unknown') {
     super('BROWSER_CONNECT', message, hint, EXIT_CODES.SERVICE_UNAVAIL);
     this.kind = kind;
+  }
+}
+
+export class PortOccupiedByForeignProcessError extends CliError {
+  constructor(detail?: string) {
+    super(
+      'port_occupied_by_foreign_process',
+      `WTSCLI endpoint ${DEFAULT_DAEMON_HOST}:${DEFAULT_DAEMON_PORT} is occupied by a process that is not proven to be the WTS-owned daemon.`,
+      `${detail ? `${detail}\n` : ''}The process was left untouched. Stop it through its owning product or free the WTSCLI endpoint, then retry.`,
+      EXIT_CODES.SERVICE_UNAVAIL,
+    );
   }
 }
 
@@ -119,7 +131,7 @@ export class TimeoutError extends CliError {
     super(
       'TIMEOUT',
       `${label} timed out after ${seconds}s`,
-      hint ?? 'Try again, or increase timeout with --timeout <seconds> (or OPENCLI_BROWSER_COMMAND_TIMEOUT for the global default)',
+      hint ?? 'Try again, or increase timeout with --timeout <seconds> (or WTSCLI_BROWSER_COMMAND_TIMEOUT for the global default)',
       EXIT_CODES.TEMPFAIL,
     );
   }

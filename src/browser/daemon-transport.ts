@@ -1,8 +1,20 @@
 import { DEFAULT_DAEMON_PORT, isIgnorableDaemonPortEnv, unsupportedDaemonPortEnvMessage } from '../constants.js';
+import { PortOccupiedByForeignProcessError } from '../errors.js';
+import {
+  DEFAULT_DAEMON_HOST,
+  WTSCLI_RUNTIME_IDENTITY,
+} from '../runtime-identity.js';
+import {
+  daemonOwnershipRequestHeaders,
+  expectedDaemonOwnerHash,
+} from './daemon-ownership.js';
 
 const DAEMON_PORT = DEFAULT_DAEMON_PORT;
-const DAEMON_URL = `http://127.0.0.1:${DAEMON_PORT}`;
-const OPENCLI_HEADERS = { 'X-OpenCLI': '1' };
+const DAEMON_URL = `http://${DEFAULT_DAEMON_HOST}:${DAEMON_PORT}`;
+const WTSCLI_HEADERS = {
+  [WTSCLI_RUNTIME_IDENTITY.transport.requestHeader.name]:
+    WTSCLI_RUNTIME_IDENTITY.transport.requestHeader.value,
+};
 
 class UnsupportedDaemonPortEnvError extends Error {
   constructor(value: string) {
@@ -12,8 +24,19 @@ class UnsupportedDaemonPortEnvError extends Error {
 }
 
 function assertSupportedDaemonPortEnv(): void {
-  const value = process.env.OPENCLI_DAEMON_PORT;
+  const value = process.env.WTSCLI_DAEMON_PORT;
   if (!isIgnorableDaemonPortEnv(value)) throw new UnsupportedDaemonPortEnvError(value!);
+}
+
+function errorChainHasCode(error: unknown, expected: string): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current instanceof Error; depth++) {
+    if ((current as NodeJS.ErrnoException).code === expected || current.message.includes(expected)) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
 }
 
 export interface DaemonStatus {
@@ -24,6 +47,11 @@ export interface DaemonStatus {
   implementation?: string;
   bridgeBuildId?: string;
   protocolVersion?: { major: number; minor: number };
+  transportProtocol?: {
+    name: string;
+    version: { major: number; minor: number };
+  };
+  ownerTokenHash?: string;
   capabilities?: string[];
   extensionConnected: boolean;
   extensionVersion?: string;
@@ -67,12 +95,33 @@ export async function requestDaemon(pathname: string, init?: RequestInit & { tim
   const { timeout = 2000, headers, ...rest } = init ?? {};
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
+  const expectedOwner = expectedDaemonOwnerHash();
   try {
-    return await fetch(`${DAEMON_URL}${pathname}`, {
+    const response = await fetch(`${DAEMON_URL}${pathname}`, {
       ...rest,
-      headers: { ...OPENCLI_HEADERS, ...headers },
+      headers: {
+        ...headers,
+        ...WTSCLI_HEADERS,
+        ...daemonOwnershipRequestHeaders(),
+      },
       signal: controller.signal,
     });
+    // Real fetch Response objects always expose Headers. A few unit-test
+    // doubles intentionally omit it; production transport never does.
+    if (response.headers && typeof response.headers.get === 'function') {
+      const marker = response.headers.get(WTSCLI_RUNTIME_IDENTITY.transport.responseHeader.name);
+      const owner = response.headers.get(WTSCLI_RUNTIME_IDENTITY.transport.ownerProofHeader.name);
+      if (
+        marker !== WTSCLI_RUNTIME_IDENTITY.transport.responseHeader.value
+        || !expectedOwner
+        || owner !== expectedOwner
+      ) {
+        throw new PortOccupiedByForeignProcessError(
+          'The endpoint did not return the exact WTS transport marker and local ownership proof.',
+        );
+      }
+    }
+    return response;
   } finally {
     clearTimeout(timer);
   }
@@ -86,7 +135,14 @@ export async function fetchDaemonStatus(opts?: { timeout?: number; contextId?: s
     return await res.json() as DaemonStatus;
   } catch (err) {
     if (err instanceof UnsupportedDaemonPortEnvError) throw err;
-    return null;
+    if (err instanceof PortOccupiedByForeignProcessError) throw err;
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new PortOccupiedByForeignProcessError('The endpoint accepted a connection but did not return a WTS identity before timeout.');
+    }
+    if (errorChainHasCode(err, 'ECONNREFUSED')) return null;
+    throw new PortOccupiedByForeignProcessError(
+      `The endpoint failed the WTS identity handshake: ${err instanceof Error ? err.message : String(err)}.`,
+    );
   }
 }
 

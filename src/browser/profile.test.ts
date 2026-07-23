@@ -9,9 +9,9 @@ describe('profile selection (requirement vs preference)', () => {
   let configDir: string;
 
   beforeEach(() => {
-    configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opencli-profile-test-'));
-    vi.stubEnv('OPENCLI_CONFIG_DIR', configDir);
-    vi.stubEnv('OPENCLI_PROFILE', '');
+    configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wtscli-profile-test-'));
+    vi.stubEnv('WTSCLI_CONFIG_DIR', configDir);
+    vi.stubEnv('WTSCLI_PROFILE', '');
   });
 
   afterEach(() => {
@@ -28,8 +28,8 @@ describe('profile selection (requirement vs preference)', () => {
     expect(resolveProfileSelection('work')).toEqual({ contextId: 'zvypsyje', source: 'explicit' });
   });
 
-  it('tags OPENCLI_PROFILE env as explicit', () => {
-    vi.stubEnv('OPENCLI_PROFILE', 'pavmrekj');
+  it('tags WTSCLI_PROFILE env as explicit', () => {
+    vi.stubEnv('WTSCLI_PROFILE', 'pavmrekj');
     expect(resolveProfileSelection()).toEqual({ contextId: 'pavmrekj', source: 'explicit' });
   });
 
@@ -39,7 +39,7 @@ describe('profile selection (requirement vs preference)', () => {
   });
 
   it('explicit argument beats env beats config default', () => {
-    vi.stubEnv('OPENCLI_PROFILE', 'from-env');
+    vi.stubEnv('WTSCLI_PROFILE', 'from-env');
     writeConfig({ version: 1, aliases: {}, defaultContextId: 'from-config' });
     expect(resolveProfileSelection('from-arg')).toEqual({ contextId: 'from-arg', source: 'explicit' });
     expect(resolveProfileSelection()).toEqual({ contextId: 'from-env', source: 'explicit' });

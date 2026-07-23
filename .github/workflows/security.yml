@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, dev]
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, seektalent/1.8.6]
   schedule:
     - cron: '0 9 * * 1'  # Weekly Monday 09:00 UTC
 

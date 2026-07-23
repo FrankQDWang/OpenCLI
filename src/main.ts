@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * opencli — Make any website your CLI. AI-powered.
+ * wtscli — Make any website your CLI. AI-powered.
  */
 
 // Ensure standard system paths are available for child processes.
@@ -23,13 +23,14 @@ import { PKG_VERSION } from './version.js';
 import { EXIT_CODES } from './errors.js';
 import { isSupportedNodeVersion, MIN_SUPPORTED_NODE_MAJOR } from './runtime-detect.js';
 import { isIgnorableDaemonPortEnv, unsupportedDaemonPortEnvMessage } from './constants.js';
+import { getWtscliConfigDir } from './runtime-identity.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // Adapters are JS-first and live at <package-root>/clis/.
 // Use findPackageRoot so the path works both in dev (src/main.ts) and prod (dist/src/main.js).
 const BUILTIN_CLIS = path.join(findPackageRoot(__filename), 'clis');
-const USER_CLIS = path.join(os.homedir(), '.opencli', 'clis');
+const USER_CLIS = path.join(getWtscliConfigDir(), 'clis');
 
 // ── Ultra-fast path: lightweight commands bypass full discovery ──────────
 // These are high-frequency or trivial paths that must not pay the startup tax.
@@ -38,7 +39,7 @@ const argv = process.argv.slice(2);
 if (typeof (globalThis as { Bun?: unknown }).Bun === 'undefined' && !isSupportedNodeVersion(process.version)) {
   process.stderr.write(
     [
-      `OpenCLI requires Node.js >= ${MIN_SUPPORTED_NODE_MAJOR}.0.0.`,
+      `WTSCLI requires Node.js >= ${MIN_SUPPORTED_NODE_MAJOR}.0.0.`,
       `Current runtime: ${process.version}`,
       'Upgrade Node.js, then retry the same command.',
       '',
@@ -47,8 +48,8 @@ if (typeof (globalThis as { Bun?: unknown }).Bun === 'undefined' && !isSupported
   process.exit(EXIT_CODES.CONFIG_ERROR);
 }
 
-if (!isIgnorableDaemonPortEnv(process.env.OPENCLI_DAEMON_PORT)) {
-  process.stderr.write(`error: ${unsupportedDaemonPortEnvMessage(process.env.OPENCLI_DAEMON_PORT)}\n`);
+if (!isIgnorableDaemonPortEnv(process.env.WTSCLI_DAEMON_PORT)) {
+  process.stderr.write(`error: ${unsupportedDaemonPortEnvMessage(process.env.WTSCLI_DAEMON_PORT)}\n`);
   process.exit(EXIT_CODES.CONFIG_ERROR);
 }
 
@@ -109,7 +110,7 @@ installNodeNetwork();
 // Parallelise independent startup I/O:
 //  - Built-in adapter discovery has no dependency on user-dir setup.
 //  - ensureUserCliCompatShims and ensureUserAdapters operate on different paths
-//    (~/.opencli/node_modules/ vs ~/.opencli/clis/ + adapter-manifest.json).
+//    (WTSCLI state node_modules/ vs clis/ + adapter-manifest.json).
 //  - registerCommand() overwrites on name collision (see registry.ts), so
 //    user-CLI discovery MUST run after built-in discovery to preserve the
 //    intended override order (user adapters override built-in ones).

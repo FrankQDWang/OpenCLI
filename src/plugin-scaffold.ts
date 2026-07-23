@@ -1,7 +1,7 @@
 /**
  * Plugin scaffold: generates a ready-to-develop plugin directory.
  *
- * Usage: opencli plugin create <name> [--dir <path>]
+ * Usage: wtscli plugin create <name> [--dir <path>]
  *
  * Creates:
  *   <name>/
@@ -133,10 +133,10 @@ ${opts.description ?? `An opencli plugin: ${name}`}
 
 \`\`\`bash
 # From local development directory
-opencli plugin install file://${targetDir}
+wtscli plugin install file://${targetDir}
 
 # From GitHub (after publishing)
-opencli plugin install github:<user>/opencli-plugin-${name}
+wtscli plugin install github:<user>/opencli-plugin-${name}
 \`\`\`
 
 ## Commands
@@ -150,14 +150,14 @@ opencli plugin install github:<user>/opencli-plugin-${name}
 
 \`\`\`bash
 # Install locally for development (symlinked, changes reflect immediately)
-opencli plugin install file://${targetDir}
+wtscli plugin install file://${targetDir}
 
 # Verify commands are registered
-opencli list | grep ${name}
+wtscli list | grep ${name}
 
 # Run a command
-opencli ${name} hello
-opencli ${name} greet --name World
+wtscli ${name} hello
+wtscli ${name} greet --name World
 \`\`\`
 `;
   writeFile(targetDir, 'README.md', readme);

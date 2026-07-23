@@ -7,6 +7,12 @@ import { BrowserConnectError } from '../errors.js';
 import { PKG_VERSION } from '../version.js';
 import { waitForBridgeReady } from './bridge-readiness.js';
 import { fetchDaemonStatus, getDaemonHealth, requestDaemonShutdown, type DaemonHealth, type DaemonStatus } from './daemon-transport.js';
+import {
+  DAEMON_OWNERSHIP_TOKEN_ENV,
+  bindDaemonOwnershipPid,
+  prepareDaemonOwnership,
+  removeDaemonOwnershipRecord,
+} from './daemon-ownership.js';
 
 export interface DaemonLaunchSpec {
   binary: string;
@@ -42,13 +48,25 @@ export function resolveDaemonLaunchSpec(): DaemonLaunchSpec {
 
 export function spawnDaemonProcess(): ChildProcess {
   const launch = resolveDaemonLaunchSpec();
-  const proc = spawn(launch.binary, launch.args, {
-    detached: true,
-    stdio: 'ignore',
-    env: { ...process.env },
-  });
-  proc.unref();
-  return proc;
+  const ownership = prepareDaemonOwnership();
+  try {
+    const proc = spawn(launch.binary, launch.args, {
+      detached: true,
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        [DAEMON_OWNERSHIP_TOKEN_ENV]: ownership.token,
+      },
+    });
+    bindDaemonOwnershipPid(ownership.token, proc.pid);
+    proc.once('error', () => removeDaemonOwnershipRecord(ownership.token));
+    proc.once('exit', () => removeDaemonOwnershipRecord(ownership.token));
+    proc.unref();
+    return proc;
+  } catch (error) {
+    removeDaemonOwnershipRecord(ownership.token);
+    throw error;
+  }
 }
 
 export async function waitForDaemonStop(timeoutMs: number): Promise<boolean> {
@@ -111,29 +129,17 @@ export async function ensureBrowserBridgeReady(
     const reason = daemonVersion
       ? `v${daemonVersion} ≠ v${PKG_VERSION}`
       : `pre-version daemon, CLI is v${PKG_VERSION}`;
-    if (verbose && (process.env.OPENCLI_VERBOSE || process.stderr.isTTY)) {
+    if (verbose && (process.env.WTSCLI_VERBOSE || process.stderr.isTTY)) {
       process.stderr.write(`⚠️  Stale daemon detected (${reason}). Restarting...\n`);
     }
     const shutdownAccepted = await daemonLifecycleHooks.requestDaemonShutdown();
-    let portReleased = shutdownAccepted && await daemonLifecycleHooks.waitForDaemonStop(3000);
-
-    if (!portReleased) {
-      const stalePid = health.status?.pid;
-      if (typeof stalePid === 'number' && Number.isInteger(stalePid) && stalePid > 0) {
-        try {
-          process.kill(stalePid, 'SIGKILL');
-        } catch {
-          // EPERM / ESRCH are both resolved by polling the fixed daemon port.
-        }
-        portReleased = await daemonLifecycleHooks.waitForDaemonStop(2000);
-      }
-    }
+    const portReleased = shutdownAccepted && await daemonLifecycleHooks.waitForDaemonStop(3000);
 
     if (!portReleased) {
       throw new BrowserConnectError(
         'Stale daemon could not be replaced',
-        `A stale daemon (${reason}) is running but did not shut down (graceful + SIGKILL both failed).\n` +
-        '  Run manually: opencli daemon stop',
+        `A stale WTS-owned daemon (${reason}) did not accept authenticated graceful shutdown and was left untouched.\n` +
+        '  Run manually: wtscli daemon stop',
         'daemon-not-running',
       );
     }
@@ -149,13 +155,13 @@ export async function ensureBrowserBridgeReady(
   }
 
   if (staleDaemonReplaced || health.state === 'stopped') {
-    if (verbose && (process.env.OPENCLI_VERBOSE || process.stderr.isTTY)) {
+    if (verbose && (process.env.WTSCLI_VERBOSE || process.stderr.isTTY)) {
       process.stderr.write('⏳ Starting daemon...\n');
     }
     spawnedProcess = daemonLifecycleHooks.spawnDaemonProcess();
-  } else if (verbose && (process.env.OPENCLI_VERBOSE || process.stderr.isTTY)) {
+  } else if (verbose && (process.env.WTSCLI_VERBOSE || process.stderr.isTTY)) {
     process.stderr.write('⏳ Waiting for Chrome/Chromium extension to connect...\n');
-    process.stderr.write('   Make sure Chrome or Chromium is open and the OpenCLI extension is enabled.\n');
+    process.stderr.write('   Make sure Chrome or Chromium is open and the WTSCLI extension is enabled.\n');
   }
 
   const finalHealth = await waitForBridgeReady(getDaemonHealth, { timeoutMs, contextId });
@@ -167,8 +173,8 @@ function browserConnectErrorFromHealth(health: DaemonHealth, contextId?: string)
   if (health.state === 'profile-required') {
     return new BrowserConnectError(
       'Multiple Browser Bridge profiles are connected',
-      'Select one with --profile <name>, OPENCLI_PROFILE=<name>, or opencli profile use <name>.\n' +
-      'Run opencli profile list to see connected profiles.',
+      'Select one with --profile <name>, WTSCLI_PROFILE=<name>, or wtscli profile use <name>.\n' +
+      'Run wtscli profile list to see connected profiles.',
       'profile-required',
     );
   }
@@ -176,23 +182,23 @@ function browserConnectErrorFromHealth(health: DaemonHealth, contextId?: string)
     const label = contextId ?? health.status.contextId ?? 'unknown';
     return new BrowserConnectError(
       `Browser profile "${label}" is not connected`,
-      'Open the matching Chrome profile and make sure the OpenCLI extension is enabled, or choose another profile with opencli profile use <name>.',
+      'Open the matching Chrome profile and make sure the WTSCLI extension is enabled, or choose another profile with wtscli profile use <name>.',
       'profile-disconnected',
     );
   }
   if (health.state === 'no-extension') {
     return new BrowserConnectError(
       'Browser Bridge extension not connected',
-      'Make sure Chrome/Chromium is open and the OpenCLI extension is enabled.\n' +
+      'Make sure Chrome/Chromium is open and the WTSCLI extension is enabled.\n' +
       'If not installed:\n' +
-      '  1. Download: https://github.com/jackwener/opencli/releases\n' +
+      '  1. Download the WTSCLI extension bundled with SeekTalent.\n' +
       '  2. Open chrome://extensions → Developer Mode → Load unpacked',
       'extension-not-connected',
     );
   }
   return new BrowserConnectError(
-    'Failed to start opencli daemon',
-    `Try running manually:\n  node ${resolveDaemonLaunchSpec().scriptPath}\nMake sure port ${DEFAULT_DAEMON_PORT} is available.`,
+    'Failed to start WTSCLI daemon',
+    `Run: wtscli daemon restart\nMake sure port ${DEFAULT_DAEMON_PORT} is available.`,
     'daemon-not-running',
   );
 }

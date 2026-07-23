@@ -11,11 +11,13 @@ import {
   resolveProfileRoute,
   validateBridgePeerIdentity,
 } from './daemon-utils.js';
+import { WTS_EXTENSION_ORIGIN, WTSCLI_RUNTIME_IDENTITY } from './runtime-identity.js';
 
 describe('getResponseCorsHeaders', () => {
   it('allows the Browser Bridge extension origin to read /ping', () => {
-    expect(getResponseCorsHeaders('/ping', 'chrome-extension://abc123')).toEqual({
-      'Access-Control-Allow-Origin': 'chrome-extension://abc123',
+    expect(getResponseCorsHeaders('/ping', WTS_EXTENSION_ORIGIN)).toEqual({
+      'Access-Control-Allow-Origin': WTS_EXTENSION_ORIGIN,
+      'Access-Control-Expose-Headers': WTSCLI_RUNTIME_IDENTITY.transport.responseHeader.name,
       Vary: 'Origin',
     });
   });
@@ -29,14 +31,14 @@ describe('getResponseCorsHeaders', () => {
   });
 
   it('does not add CORS headers for command endpoints even from the extension origin', () => {
-    expect(getResponseCorsHeaders('/command', 'chrome-extension://abc123')).toBeUndefined();
+    expect(getResponseCorsHeaders('/command', WTS_EXTENSION_ORIGIN)).toBeUndefined();
   });
 });
 
 describe('daemon command dispatch', () => {
   const expectedBridge = {
-    implementation: 'seektalent-opencli',
-    bridgeBuildId: 'seektalent-opencli-1.8.6+test',
+    implementation: 'seektalent-wtscli',
+    bridgeBuildId: 'seektalent-wtscli-0.1.0+test',
     protocolVersion: { major: 1, minor: 0 },
     capabilities: ['tab.find.v1', 'tab.close-verified.v1'],
   };
@@ -134,7 +136,7 @@ describe('daemon command dispatch', () => {
     expect(route).toMatchObject({ ok: false, errorCode: 'profile_required' });
     if (!route.ok) {
       expect(route.error).toContain('zvypsyje');
-      expect(route.errorHint).toContain('opencli profile use');
+      expect(route.errorHint).toContain('wtscli profile use');
     }
   });
 

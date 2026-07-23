@@ -1,5 +1,4 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ObservationEvent, ObservationExportResult, ObservationExportStatus, ObservationTraceReceipt } from './events.js';
 import { ObservationSession } from './session.js';
@@ -8,6 +7,7 @@ import { pruneTraceArtifacts, traceExpiresAt, type TraceRetentionPolicyInput } f
 import { CliError, getErrorMessage } from '../errors.js';
 import { log } from '../logger.js';
 import { PKG_VERSION } from '../version.js';
+import { getWtscliConfigDir } from '../runtime-identity.js';
 
 export interface ExportObservationOptions {
   baseDir?: string;
@@ -17,7 +17,7 @@ export interface ExportObservationOptions {
 }
 
 function baseOpenCliDir(): string {
-  return process.env.OPENCLI_CONFIG_DIR || path.join(os.homedir(), '.opencli');
+  return getWtscliConfigDir();
 }
 
 function safeSegment(value: string | undefined): string {

@@ -390,7 +390,7 @@ async function main(): Promise<void> {
     }
     process.stderr.write(
       `\nEvery positional arg must declare a non-empty \`help\` string so\n`
-      + `\`opencli <site> <cmd> --help\` shows callers what the parameter is for.\n`
+      + `\`wtscli <site> <cmd> --help\` shows callers what the parameter is for.\n`
       + `Add \`help: '...'\` to each arg above and re-run the build.\n`,
     );
     process.exit(1);

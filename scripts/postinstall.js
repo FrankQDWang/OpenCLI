@@ -18,40 +18,41 @@
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { getWtscliConfigDir } from './runtime-identity.js';
 
 
 // ── Completion script content ──────────────────────────────────────────────
 
-const BASH_COMPLETION = `# Bash completion for opencli (auto-installed)
-_opencli_completions() {
+const BASH_COMPLETION = `# Bash completion for wtscli (auto-installed)
+_wtscli_completions() {
   local cur words cword
   _get_comp_words_by_ref -n : cur words cword
 
   local completions
-  completions=$(opencli --get-completions --cursor "$cword" "\${words[@]:1}" 2>/dev/null)
+  completions=$(wtscli --get-completions --cursor "$cword" "\${words[@]:1}" 2>/dev/null)
 
   COMPREPLY=( $(compgen -W "$completions" -- "$cur") )
   __ltrim_colon_completions "$cur"
 }
-complete -F _opencli_completions opencli
+complete -F _wtscli_completions wtscli
 `;
 
-const ZSH_COMPLETION = `#compdef opencli
-# Zsh completion for opencli (auto-installed)
-_opencli() {
+const ZSH_COMPLETION = `#compdef wtscli
+# Zsh completion for wtscli (auto-installed)
+_wtscli() {
   local -a completions
   local cword=$((CURRENT - 1))
-  completions=(\${(f)"$(opencli --get-completions --cursor "$cword" "\${words[@]:1}" 2>/dev/null)"})
+  completions=(\${(f)"$(wtscli --get-completions --cursor "$cword" "\${words[@]:1}" 2>/dev/null)"})
   compadd -a completions
 }
-_opencli
+_wtscli
 `;
 
-const FISH_COMPLETION = `# Fish completion for opencli (auto-installed)
-complete -c opencli -f -a '(
+const FISH_COMPLETION = `# Fish completion for wtscli (auto-installed)
+complete -c wtscli -f -a '(
   set -l tokens (commandline -cop)
   set -l cursor (count (commandline -cop))
-  opencli --get-completions --cursor $cursor $tokens[2..] 2>/dev/null
+  wtscli --get-completions --cursor $cursor $tokens[2..] 2>/dev/null
 )'
 `;
 
@@ -97,7 +98,7 @@ function main() {
     switch (shell) {
       case 'zsh': {
         const completionsDir = join(home, '.zsh', 'completions');
-        const completionFile = join(completionsDir, '_opencli');
+        const completionFile = join(completionsDir, '_wtscli');
         ensureDir(completionsDir);
         writeFileSync(completionFile, ZSH_COMPLETION, 'utf8');
 
@@ -113,7 +114,7 @@ function main() {
       }
       case 'bash': {
         const userCompDir = join(home, '.bash_completion.d');
-        const completionFile = join(userCompDir, 'opencli');
+        const completionFile = join(userCompDir, 'wtscli');
         ensureDir(userCompDir);
         writeFileSync(completionFile, BASH_COMPLETION, 'utf8');
 
@@ -127,7 +128,7 @@ function main() {
       }
       case 'fish': {
         const completionsDir = join(home, '.config', 'fish', 'completions');
-        const completionFile = join(completionsDir, 'opencli.fish');
+        const completionFile = join(completionsDir, 'wtscli.fish');
         ensureDir(completionsDir);
         writeFileSync(completionFile, FISH_COMPLETION, 'utf8');
 
@@ -138,15 +139,15 @@ function main() {
     }
   } catch (err) {
     // Completion install is best-effort; never fail the package install
-    if (process.env.OPENCLI_VERBOSE) {
+    if (process.env.WTSCLI_VERBOSE) {
       console.error(`Warning: Could not install shell completion: ${err.message}`);
     }
   }
 
   // ── Spotify credentials template ────────────────────────────────────
-  const opencliDir = join(home, '.opencli');
-  const spotifyEnvFile = join(opencliDir, 'spotify.env');
-  ensureDir(opencliDir);
+  const wtscliDir = getWtscliConfigDir();
+  const spotifyEnvFile = join(wtscliDir, 'spotify.env');
+  ensureDir(wtscliDir);
   if (!existsSync(spotifyEnvFile)) {
     writeFileSync(spotifyEnvFile,
       `# Spotify credentials — get them at https://developer.spotify.com/dashboard\n` +
@@ -156,17 +157,17 @@ function main() {
       'utf8'
     );
     console.log(`✓ Spotify credentials template created at ${spotifyEnvFile}`);
-    console.log(`  Edit the file and add your Client ID and Secret, then run: opencli spotify auth`);
+    console.log(`  Edit the file and add your Client ID and Secret, then run: wtscli spotify auth`);
   }
 
   // ── Browser Bridge setup hint ───────────────────────────────────────
   console.log('');
   console.log('  \x1b[1mNext step — Browser Bridge setup\x1b[0m');
   console.log('  Browser commands (bilibili, zhihu, twitter...) require the extension:');
-  console.log('  1. Download: https://github.com/jackwener/opencli/releases');
+  console.log('  1. Use the WTSCLI extension bundled with SeekTalent.');
   console.log('  2. In Chrome or Chromium, open chrome://extensions → enable Developer Mode → Load unpacked');
   console.log('');
-  console.log('  Then run \x1b[36mopencli doctor\x1b[0m to verify.');
+  console.log('  Then run \x1b[36mwtscli doctor\x1b[0m to verify.');
   console.log('');
 
 }

@@ -1,13 +1,13 @@
 /**
- * opencli micro-daemon — HTTP + WebSocket bridge between CLI and Chrome Extension.
+ * WTSCLI micro-daemon — HTTP + WebSocket bridge between CLI and Chrome Extension.
  *
  * Architecture:
  *   CLI → HTTP POST /command → daemon → WebSocket → Extension
  *   Extension → WebSocket result → daemon → HTTP response → CLI
  *
  * Security (defense-in-depth against browser-based CSRF):
- *   1. Origin check — reject HTTP/WS from non chrome-extension:// origins
- *   2. Custom header — require X-OpenCLI header (browsers can't send it
+ *   1. Origin check — accept only the exact WTS Chrome extension origin
+ *   2. Custom header — require the WTS-owned request marker (browsers can't send it
  *      without CORS preflight, which we deny)
  *   3. No CORS headers on command endpoints — only /ping is readable from the
  *      Browser Bridge extension origin so the extension can probe daemon reachability
@@ -15,9 +15,9 @@
  *   5. WebSocket verifyClient — reject upgrade before connection is established
  *
  * Lifecycle:
- *   - Auto-spawned by opencli on first browser command
+ *   - Auto-spawned by wtscli on first browser command
  *   - Persistent — stays alive until explicit shutdown, SIGTERM, or uninstall
- *   - Listens on localhost:19825
+ *   - Listens on 127.0.0.1:19826
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -30,6 +30,16 @@ import { DEFAULT_CONTEXT_ID } from './browser/profile.js';
 import { recordExtensionVersion } from './update-check.js';
 import { BRIDGE_IDENTITY, type BridgeIdentity } from './bridge-identity.js';
 import {
+  DEFAULT_DAEMON_HOST,
+  WTSCLI_RUNTIME_IDENTITY,
+} from './runtime-identity.js';
+import {
+  bindDaemonOwnershipPid,
+  removeDaemonOwnershipRecord,
+  requestHasDaemonOwnership,
+  requireDaemonOwnershipFromEnv,
+} from './browser/daemon-ownership.js';
+import {
   BROWSER_OPERATION_ACTION,
   browserOperationFailure,
   runBrowserOperation,
@@ -40,15 +50,33 @@ import {
   buildCommandTimeoutFailure,
   buildExtensionDisconnectFailure,
   getResponseCorsHeaders,
+  isAllowedWtsExtensionOrigin,
   resolveProfileRoute,
   validateBridgePeerIdentity,
 } from './daemon-utils.js';
 
 const PORT = DEFAULT_DAEMON_PORT;
-if (!isIgnorableDaemonPortEnv(process.env.OPENCLI_DAEMON_PORT)) {
-  log.error(unsupportedDaemonPortEnvMessage(process.env.OPENCLI_DAEMON_PORT));
+if (!isIgnorableDaemonPortEnv(process.env.WTSCLI_DAEMON_PORT)) {
+  log.error(unsupportedDaemonPortEnvMessage(process.env.WTSCLI_DAEMON_PORT));
   process.exit(EXIT_CODES.USAGE_ERROR);
 }
+const DAEMON_OWNERSHIP = (() => {
+  try {
+    const ownership = requireDaemonOwnershipFromEnv();
+    bindDaemonOwnershipPid(ownership.token, process.pid);
+    return { ...ownership, pid: process.pid };
+  } catch (error) {
+    log.error(error instanceof Error ? error.message : String(error));
+    process.exit(EXIT_CODES.SERVICE_UNAVAIL);
+    throw error;
+  }
+})();
+const IDENTITY_RESPONSE_HEADERS = {
+  [WTSCLI_RUNTIME_IDENTITY.transport.responseHeader.name]:
+    WTSCLI_RUNTIME_IDENTITY.transport.responseHeader.value,
+  [WTSCLI_RUNTIME_IDENTITY.transport.ownerProofHeader.name]:
+    DAEMON_OWNERSHIP.tokenHash,
+};
 
 // ─── State ───────────────────────────────────────────────────────────
 
@@ -140,7 +168,7 @@ function resolveExtensionConnection(contextId?: string, preferredContextId?: str
     staleDefaultWarned.add(route.fallbackFrom);
     log.warn(
       `[daemon] Default profile "${route.fallbackFrom}" is not connected; ` +
-      `using the only connected profile "${route.contextId}". Update the default with: opencli profile use <name>`,
+      `using the only connected profile "${route.contextId}". Update the default with: wtscli profile use <name>`,
     );
   }
   const connection = extensionProfiles.get(route.contextId);
@@ -225,7 +253,11 @@ function jsonResponse(
   data: unknown,
   extraHeaders?: Record<string, string>,
 ): void {
-  res.writeHead(status, { 'Content-Type': 'application/json', ...extraHeaders });
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    ...IDENTITY_RESPONSE_HEADERS,
+    ...extraHeaders,
+  });
   res.end(JSON.stringify(data));
 }
 
@@ -236,7 +268,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   // legitimate CLI requests pass through.  Chrome Extension connects via
   // WebSocket (which bypasses this HTTP handler entirely).
   const origin = req.headers['origin'] as string | undefined;
-  if (origin && !origin.startsWith('chrome-extension://')) {
+  if (origin && !isAllowedWtsExtensionOrigin(origin)) {
     jsonResponse(res, 403, { ok: false, error: 'Forbidden: cross-origin request blocked' });
     return;
   }
@@ -253,7 +285,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   const url = req.url ?? '/';
   const pathname = url.split('?')[0];
 
-  // Health-check endpoint — no X-OpenCLI header required.
+  // Health-check endpoint — no WTS request header required.
   // Used by the extension to silently probe daemon reachability before
   // attempting a WebSocket connection (avoids uncatchable ERR_CONNECTION_REFUSED).
   // Security note: this endpoint is reachable by any client that passes the
@@ -265,12 +297,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     return;
   }
 
-  // Require custom header on all other HTTP requests.  Browsers cannot attach
+  // Require the WTS custom header on all other HTTP requests. Browsers cannot attach
   // custom headers in "simple" requests, and our preflight returns no
   // Access-Control-Allow-Headers, so scripted fetch() from web pages is
   // blocked even if Origin check is somehow bypassed.
-  if (!req.headers['x-opencli']) {
-    jsonResponse(res, 403, { ok: false, error: 'Forbidden: missing X-OpenCLI header' });
+  const requestHeaderName = WTSCLI_RUNTIME_IDENTITY.transport.requestHeader.name.toLowerCase();
+  if (req.headers[requestHeaderName] !== WTSCLI_RUNTIME_IDENTITY.transport.requestHeader.value) {
+    jsonResponse(res, 403, { ok: false, error: `Forbidden: missing ${WTSCLI_RUNTIME_IDENTITY.transport.requestHeader.name} header` });
     return;
   }
 
@@ -300,6 +333,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       implementation: BRIDGE_IDENTITY.implementation,
       bridgeBuildId: BRIDGE_IDENTITY.bridgeBuildId,
       protocolVersion: BRIDGE_IDENTITY.protocolVersion,
+      transportProtocol: WTSCLI_RUNTIME_IDENTITY.transport.protocol,
+      ownerTokenHash: DAEMON_OWNERSHIP.tokenHash,
       capabilities: BRIDGE_IDENTITY.capabilities,
       extensionConnected: !!route.connection,
       extensionVersion: route.connection?.extensionVersion ?? undefined,
@@ -316,6 +351,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       commandResultUnknown: commandResultUnknownCount,
       memoryMB: Math.round(mem.rss / 1024 / 1024 * 10) / 10,
       port: PORT,
+    });
+    return;
+  }
+
+  if (!requestHasDaemonOwnership(req.headers)) {
+    jsonResponse(res, 409, {
+      ok: false,
+      errorCode: 'port_occupied_by_foreign_process',
+      error: 'WTSCLI daemon ownership proof is missing or does not match.',
     });
     return;
   }
@@ -507,12 +551,11 @@ const wss = new WebSocketServer({
   server: httpServer,
   path: '/ext',
   verifyClient: ({ req }: { req: IncomingMessage }) => {
-    // Block browser-originated WebSocket connections.  Browsers don't
-    // enforce CORS on WebSocket, so a malicious webpage could connect to
-    // ws://localhost:19825/ext and impersonate the Extension.  Real Chrome
-    // Extensions send origin chrome-extension://<id>.
+    // Browsers do not enforce CORS on WebSocket. Accept only the stable WTS
+    // extension origin; missing, legacy, arbitrary, and malformed origins fail
+    // before a session can be registered.
     const origin = req.headers['origin'] as string | undefined;
-    return !origin || origin.startsWith('chrome-extension://');
+    return isAllowedWtsExtensionOrigin(origin);
   },
 });
 
@@ -609,13 +652,13 @@ wss.on('connection', (ws: WebSocket) => {
 
 // ─── Start ───────────────────────────────────────────────────────────
 
-httpServer.listen(PORT, '127.0.0.1', () => {
-  log.info(`[daemon] Listening on http://127.0.0.1:${PORT}`);
+httpServer.listen(PORT, DEFAULT_DAEMON_HOST, () => {
+  log.info(`[daemon] Listening on http://${DEFAULT_DAEMON_HOST}:${PORT}`);
 });
 
 httpServer.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
-    log.error(`[daemon] Port ${PORT} already in use — another daemon is likely running. Exiting.`);
+    log.error(`[daemon] port_occupied_by_foreign_process: WTSCLI endpoint ${DEFAULT_DAEMON_HOST}:${PORT} is already in use; the occupant was left untouched.`);
     process.exit(EXIT_CODES.SERVICE_UNAVAIL);
   }
   log.error(`[daemon] Server error: ${err.message}`);
@@ -647,10 +690,16 @@ function shutdown(): void {
   for (const profile of extensionProfiles.values()) profile.ws.close();
   // Let the rejection responses flush before exiting — a synchronous
   // process.exit() would kill the queued microtasks that write them.
-  httpServer.close(() => process.exit(EXIT_CODES.SUCCESS));
+  httpServer.close(() => {
+    removeDaemonOwnershipRecord(DAEMON_OWNERSHIP.token);
+    process.exit(EXIT_CODES.SUCCESS);
+  });
   setTimeout(() => {
     httpServer.closeIdleConnections?.();
-    setTimeout(() => process.exit(EXIT_CODES.SUCCESS), 500).unref();
+    setTimeout(() => {
+      removeDaemonOwnershipRecord(DAEMON_OWNERSHIP.token);
+      process.exit(EXIT_CODES.SUCCESS);
+    }, 500).unref();
   }, 100).unref();
 }
 

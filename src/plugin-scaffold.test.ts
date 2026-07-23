@@ -80,7 +80,8 @@ describe('createPluginScaffold', () => {
     createPluginScaffold('test-readme', { dir });
     const readme = fs.readFileSync(path.join(dir, 'README.md'), 'utf-8');
 
-    expect(readme).toContain(`opencli plugin install file://${dir}`);
+    expect(readme).toContain(`wtscli plugin install file://${dir}`);
+    expect(readme).not.toMatch(/^opencli\s+/m);
   });
 
   it('rejects invalid names', () => {
