@@ -199,8 +199,8 @@ describe('WTSCLI product identity boundary', () => {
       const source = fs.readFileSync(file, 'utf8');
       const relative = path.relative(ROOT, file);
       const isLegacyPathRejectionGuard = (
-        relative === 'src/runtime-identity.ts'
-        || relative === 'scripts/runtime-identity.js'
+        relative === path.join('src', 'runtime-identity.ts')
+        || relative === path.join('scripts', 'runtime-identity.js')
       ) && source.includes('must not point to the legacy OpenCLI state directory');
       if (/process\.env(?:\.OPENCLI_|\[['"]OPENCLI_)/.test(source)) {
         violations.push(`${relative}: legacy env authority`);
