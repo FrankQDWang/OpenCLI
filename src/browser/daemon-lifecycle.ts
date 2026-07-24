@@ -5,7 +5,6 @@ import * as path from 'node:path';
 import { DEFAULT_DAEMON_PORT } from '../constants.js';
 import { BrowserConnectError } from '../errors.js';
 import { PKG_VERSION } from '../version.js';
-import { waitForBridgeReady } from './bridge-readiness.js';
 import { fetchDaemonStatus, getDaemonHealth, requestDaemonShutdown, type DaemonHealth, type DaemonStatus } from './daemon-transport.js';
 import {
   DAEMON_OWNERSHIP_TOKEN_ENV,
@@ -106,6 +105,35 @@ export const daemonLifecycleHooks = {
   waitForDaemonStop,
 };
 
+async function convergeOnDaemonOwner(opts: {
+  timeoutMs: number;
+  contextId?: string;
+  initialSpawnedProcess?: ChildProcess | null;
+  isSatisfied: (health: DaemonHealth) => boolean;
+}): Promise<EnsureBrowserBridgeReadyResult> {
+  const deadline = Date.now() + Math.max(0, opts.timeoutMs);
+  let health: DaemonHealth = { state: 'stopped', status: null };
+  let spawnedProcess = opts.initialSpawnedProcess ?? null;
+
+  do {
+    const remaining = deadline - Date.now();
+    health = await getDaemonHealth({
+      contextId: opts.contextId,
+      timeout: Math.min(1000, Math.max(100, remaining)),
+    });
+    if (health.state === 'stopped') {
+      const proc = daemonLifecycleHooks.spawnDaemonProcess();
+      if (proc) spawnedProcess = proc;
+    }
+    if (opts.isSatisfied(health) || Date.now() >= deadline) {
+      return { health, spawnedProcess };
+    }
+    await sleep(Math.min(200, Math.max(0, deadline - Date.now())));
+  } while (Date.now() < deadline);
+
+  return { health, spawnedProcess };
+}
+
 export async function restartDaemon(opts: { stopTimeoutMs?: number; startTimeoutMs?: number } = {}): Promise<DaemonRestartResult> {
   const previousStatus = await fetchDaemonStatus();
   let stopped = previousStatus === null;
@@ -117,9 +145,16 @@ export async function restartDaemon(opts: { stopTimeoutMs?: number; startTimeout
     }
   }
 
-  const spawnedProcess = spawnDaemonProcess();
-  const status = await waitForDaemonStatus(opts.startTimeoutMs ?? 5000);
-  return { previousStatus, status, stopped, spawned: spawnedProcess !== null };
+  const convergence = await convergeOnDaemonOwner({
+    timeoutMs: opts.startTimeoutMs ?? 5000,
+    isSatisfied: (health) => health.status !== null,
+  });
+  return {
+    previousStatus,
+    status: convergence.health.status,
+    stopped,
+    spawned: convergence.spawnedProcess !== null,
+  };
 }
 
 export async function ensureBrowserBridgeReady(
@@ -175,15 +210,14 @@ export async function ensureBrowserBridgeReady(
     process.stderr.write('   Make sure Chrome or Chromium is open and the WTSCLI extension is enabled.\n');
   }
 
-  const convergeOnOwner = async (fetchOpts?: { timeout?: number; contextId?: string }): Promise<DaemonHealth> => {
-    const observed = await getDaemonHealth(fetchOpts);
-    if (observed.state === 'stopped') {
-      const proc = daemonLifecycleHooks.spawnDaemonProcess();
-      if (!spawnedProcess && proc) spawnedProcess = proc;
-    }
-    return observed;
-  };
-  const finalHealth = await waitForBridgeReady(convergeOnOwner, { timeoutMs, contextId });
+  const convergence = await convergeOnDaemonOwner({
+    timeoutMs,
+    contextId,
+    initialSpawnedProcess: spawnedProcess,
+    isSatisfied: (observed) => observed.state === 'ready',
+  });
+  spawnedProcess = convergence.spawnedProcess;
+  const finalHealth = convergence.health;
   if (finalHealth.state === 'ready') return { health: finalHealth, spawnedProcess };
   throw browserConnectErrorFromHealth(finalHealth, contextId);
 }
