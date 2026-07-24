@@ -664,7 +664,7 @@ async function refreshMappings() {
   }
 }
 
-const JOURNAL_KEY = "wtscli_command_journal_v1";
+const JOURNAL_KEY = "opencli_command_journal_v1";
 const JOURNAL_MAX_ENTRIES = 64;
 const JOURNAL_RESULT_MAX_BYTES = 64 * 1024;
 let cache = null;
@@ -755,7 +755,7 @@ async function executeWithJournal(cmd, execute) {
 let ws = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
-const CONTEXT_ID_KEY = "wtscli_context_id_v1";
+const CONTEXT_ID_KEY = "opencli_context_id_v1";
 let currentContextId = "default";
 let contextIdPromise = null;
 let connectInFlight = null;
@@ -948,9 +948,9 @@ const automationSessions = /* @__PURE__ */ new Map();
 const IDLE_TIMEOUT_DEFAULT = 3e4;
 const IDLE_TIMEOUT_INTERACTIVE = 6e5;
 const IDLE_TIMEOUT_NONE = -1;
-const REGISTRY_KEY = "wtscli_target_lease_registry_v2";
-const CONTROL_FENCE_REGISTRY_KEY = "wtscli_control_fences_v1";
-const LEASE_IDLE_ALARM_PREFIX = "wtscli:lease-idle:";
+const REGISTRY_KEY = "opencli_target_lease_registry_v2";
+const CONTROL_FENCE_REGISTRY_KEY = "opencli_control_fences_v1";
+const LEASE_IDLE_ALARM_PREFIX = "opencli:lease-idle:";
 const CONTAINER_TAB_GROUP_TITLE = {
   interactive: "WTSCLI Browser",
   // Retained for registry/type compatibility. Adapter automation no longer

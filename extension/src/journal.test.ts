@@ -56,9 +56,9 @@ describe('command journal', () => {
   });
 
   it('reports command_lost when a started entry survives a worker restart', async () => {
-    // Simulate: previous worker persisted 'started', then died mid-execution.
+    // Simulate the base WTS extension persisting 'started', then dying mid-execution.
     sessionStorage._load({
-      wtscli_command_journal_v1: { 'cmd-3': { status: 'started', ts: Date.now() } },
+      opencli_command_journal_v1: { 'cmd-3': { status: 'started', ts: Date.now() } },
     });
 
     const execute = vi.fn();
@@ -69,10 +69,10 @@ describe('command journal', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('replays a completed result persisted by a previous worker', async () => {
+  it('replays a completed result persisted by the base WTS extension without a second effect', async () => {
     const recorded: Result = { id: 'cmd-4', ok: true, data: 'from-previous-worker' };
     sessionStorage._load({
-      wtscli_command_journal_v1: { 'cmd-4': { status: 'done', ts: Date.now(), result: recorded } },
+      opencli_command_journal_v1: { 'cmd-4': { status: 'done', ts: Date.now(), result: recorded } },
     });
 
     const execute = vi.fn();

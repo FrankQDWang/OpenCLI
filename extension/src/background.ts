@@ -24,7 +24,10 @@ import { executeWithJournal } from './journal';
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
-const CONTEXT_ID_KEY = 'wtscli_context_id_v1';
+// These keys predate the WTSCLI product-name hard cut, but they have always
+// lived inside the stable WTS extension ID's private storage namespace.
+// Retaining them preserves context/lease/fence continuity across upgrades.
+const CONTEXT_ID_KEY = 'opencli_context_id_v1';
 let currentContextId = 'default';
 let contextIdPromise: Promise<string> | null = null;
 let connectInFlight: Promise<void> | null = null;
@@ -296,9 +299,9 @@ const automationSessions = new Map<string, TargetLease>();
 const IDLE_TIMEOUT_DEFAULT = 30_000;      // 30s — adapter-driven automation
 const IDLE_TIMEOUT_INTERACTIVE = 600_000; // 10min — human-paced browser:* / operate:*
 const IDLE_TIMEOUT_NONE = -1;             // borrowed bound tabs stay bound until unbound/closed
-const REGISTRY_KEY = 'wtscli_target_lease_registry_v2';
-const CONTROL_FENCE_REGISTRY_KEY = 'wtscli_control_fences_v1';
-const LEASE_IDLE_ALARM_PREFIX = 'wtscli:lease-idle:';
+const REGISTRY_KEY = 'opencli_target_lease_registry_v2';
+const CONTROL_FENCE_REGISTRY_KEY = 'opencli_control_fences_v1';
+const LEASE_IDLE_ALARM_PREFIX = 'opencli:lease-idle:';
 const CONTAINER_TAB_GROUP_TITLE: Record<OwnedWindowRole, string> = {
   interactive: 'WTSCLI Browser',
   // Retained for registry/type compatibility. Adapter automation no longer

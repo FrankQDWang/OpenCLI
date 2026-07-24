@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -9,7 +9,6 @@ import { waitForBridgeReady } from './bridge-readiness.js';
 import { fetchDaemonStatus, getDaemonHealth, requestDaemonShutdown, type DaemonHealth, type DaemonStatus } from './daemon-transport.js';
 import {
   DAEMON_OWNERSHIP_TOKEN_ENV,
-  bindDaemonOwnershipPid,
   prepareDaemonOwnership,
   removeDaemonOwnershipRecord,
 } from './daemon-ownership.js';
@@ -46,11 +45,18 @@ export function resolveDaemonLaunchSpec(): DaemonLaunchSpec {
   };
 }
 
-export function spawnDaemonProcess(): ChildProcess {
-  const launch = resolveDaemonLaunchSpec();
+export const daemonProcessHooks: {
+  spawn: (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
+} = {
+  spawn,
+};
+
+export function spawnDaemonProcess(): ChildProcess | null {
   const ownership = prepareDaemonOwnership();
+  if (!ownership) return null;
+  const launch = resolveDaemonLaunchSpec();
   try {
-    const proc = spawn(launch.binary, launch.args, {
+    const proc = daemonProcessHooks.spawn(launch.binary, launch.args, {
       detached: true,
       stdio: 'ignore',
       env: {
@@ -58,9 +64,14 @@ export function spawnDaemonProcess(): ChildProcess {
         [DAEMON_OWNERSHIP_TOKEN_ENV]: ownership.token,
       },
     });
-    bindDaemonOwnershipPid(ownership.token, proc.pid);
-    proc.once('error', () => removeDaemonOwnershipRecord(ownership.token));
-    proc.once('exit', () => removeDaemonOwnershipRecord(ownership.token));
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      removeDaemonOwnershipRecord(ownership.token);
+    };
+    proc.once('error', cleanup);
+    proc.once('exit', cleanup);
     proc.unref();
     return proc;
   } catch (error) {
@@ -106,9 +117,9 @@ export async function restartDaemon(opts: { stopTimeoutMs?: number; startTimeout
     }
   }
 
-  spawnDaemonProcess();
+  const spawnedProcess = spawnDaemonProcess();
   const status = await waitForDaemonStatus(opts.startTimeoutMs ?? 5000);
-  return { previousStatus, status, stopped, spawned: true };
+  return { previousStatus, status, stopped, spawned: spawnedProcess !== null };
 }
 
 export async function ensureBrowserBridgeReady(
@@ -164,7 +175,15 @@ export async function ensureBrowserBridgeReady(
     process.stderr.write('   Make sure Chrome or Chromium is open and the WTSCLI extension is enabled.\n');
   }
 
-  const finalHealth = await waitForBridgeReady(getDaemonHealth, { timeoutMs, contextId });
+  const convergeOnOwner = async (fetchOpts?: { timeout?: number; contextId?: string }): Promise<DaemonHealth> => {
+    const observed = await getDaemonHealth(fetchOpts);
+    if (observed.state === 'stopped') {
+      const proc = daemonLifecycleHooks.spawnDaemonProcess();
+      if (!spawnedProcess && proc) spawnedProcess = proc;
+    }
+    return observed;
+  };
+  const finalHealth = await waitForBridgeReady(convergeOnOwner, { timeoutMs, contextId });
   if (finalHealth.state === 'ready') return { health: finalHealth, spawnedProcess };
   throw browserConnectErrorFromHealth(finalHealth, contextId);
 }

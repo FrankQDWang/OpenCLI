@@ -224,18 +224,26 @@ describe('WTSCLI product identity boundary', () => {
     expect(violations).toEqual([]);
   });
 
-  it('has no legacy endpoint, transport marker, or storage authority in WTS extension production code', () => {
+  it('has no legacy endpoint or transport marker authority in WTS extension production code', () => {
     const files = productionFiles(path.join(ROOT, 'extension', 'src'));
     const violations = files.flatMap((file) => {
       const source = fs.readFileSync(file, 'utf8');
       const reasons: string[] = [];
       if (/\b19825\b/.test(source)) reasons.push('legacy port');
       if (/X-OpenCLI/i.test(source)) reasons.push('legacy transport marker');
-      if (/['"]opencli_(?:context|command_journal|target_lease|control)/.test(source)) {
-        reasons.push('legacy extension storage key');
-      }
       return reasons.map((reason) => `${path.relative(ROOT, file)}: ${reason}`);
     });
     expect(violations).toEqual([]);
+  });
+
+  it('retains the base WTS durable storage keys under the stable WTS extension ID', () => {
+    const background = fs.readFileSync(path.join(ROOT, 'extension', 'src', 'background.ts'), 'utf8');
+    const journal = fs.readFileSync(path.join(ROOT, 'extension', 'src', 'journal.ts'), 'utf8');
+
+    expect(background).toContain("'opencli_context_id_v1'");
+    expect(background).toContain("'opencli_target_lease_registry_v2'");
+    expect(background).toContain("'opencli_control_fences_v1'");
+    expect(background).toContain("'opencli:lease-idle:'");
+    expect(journal).toContain("'opencli_command_journal_v1'");
   });
 });
