@@ -11,8 +11,8 @@
  */
 
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { getWtscliCacheDir } from '../runtime-identity.js';
 
 export const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -42,7 +42,7 @@ export interface NetworkCacheFile {
 }
 
 function getDefaultCacheDir(): string {
-    return process.env.OPENCLI_CACHE_DIR || path.join(os.homedir(), '.opencli', 'cache');
+    return getWtscliCacheDir();
 }
 
 export function getCachePath(session: string, baseDir: string = getDefaultCacheDir()): string {

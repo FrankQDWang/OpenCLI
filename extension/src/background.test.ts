@@ -1,4 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EXTENSION_BRIDGE_IDENTITY } from './bridge-identity.js';
+
+function wtsDaemonResponse(body: unknown = { ok: true }): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      [EXTENSION_BRIDGE_IDENTITY.runtimeIdentity.transport.responseHeader.name]:
+        EXTENSION_BRIDGE_IDENTITY.runtimeIdentity.transport.responseHeader.value,
+    },
+  });
+}
 
 type Listener<T extends (...args: any[]) => void> = {
   addListener: any;
@@ -231,6 +243,7 @@ function createChromeMock() {
     chrome,
     tabs,
     groups,
+    storageState,
     query,
     create,
     update,
@@ -1030,17 +1043,141 @@ describe('background tab isolation', () => {
     });
   });
 
+  it('starts from the base WTS durable context, lease, fence, and idle alarm state', async () => {
+    const { chrome, storageState, tabs } = createChromeMock();
+    const deadline = Date.now() + 30_000;
+    await chrome.storage.local.set({
+      opencli_context_id_v1: 'basewts1',
+      opencli_target_lease_registry_v2: {
+        version: 2,
+        contextId: 'basewts1',
+        ownedContainers: {
+          interactive: { windowId: null, groupId: null },
+          automation: { windowId: 1, groupId: null },
+        },
+        leases: {
+          [adapterKey('upgrade')]: {
+            session: 'upgrade',
+            surface: 'adapter',
+            kind: 'owned',
+            windowId: 1,
+            owned: true,
+            preferredTabId: 1,
+            contextId: 'basewts1',
+            ownership: 'owned',
+            windowOwnership: 'owned',
+            lifecycle: 'ephemeral',
+            windowRole: 'automation',
+            idleDeadlineAt: deadline,
+            updatedAt: Date.now(),
+          },
+        },
+      },
+      opencli_control_fences_v1: {
+        'liepin-profile-1': 7,
+      },
+    });
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
+    vi.stubGlobal('__WTSCLI_COMPAT_RANGE__', '>=0.1.0 <0.2.0');
+
+    const mod = await import('./background');
+    await vi.waitFor(() => {
+      expect(mod.__test__.getSession(adapterKey('upgrade'))).toEqual(expect.objectContaining({
+        preferredTabId: 1,
+        contextId: 'basewts1',
+      }));
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+    const socket = MockWebSocket.instances[0];
+    socket.readyState = MockWebSocket.OPEN;
+    socket.onopen?.();
+
+    expect(socket.sent.map((entry) => JSON.parse(entry)).find((entry) => entry.type === 'hello'))
+      .toEqual(expect.objectContaining({ contextId: 'basewts1' }));
+    expect(await mod.__test__.handleCommand({
+      id: 'activate-after-upgrade',
+      action: 'control',
+      op: 'activate',
+      controlKey: 'liepin-profile-1',
+    })).toEqual(expect.objectContaining({
+      ok: true,
+      data: { controlKey: 'liepin-profile-1', fenceToken: 8 },
+    }));
+
+    const onAlarmListener = chrome.alarms.onAlarm.addListener.mock.calls[0][0];
+    await onAlarmListener({ name: `opencli:lease-idle:${encodeURIComponent(adapterKey('upgrade'))}` });
+    expect(mod.__test__.getSession(adapterKey('upgrade'))).toBeNull();
+    expect(tabs[0].url).toBe('about:blank');
+    expect(storageState.opencli_context_id_v1).toBe('basewts1');
+    expect(storageState.opencli_control_fences_v1).toEqual({ 'liepin-profile-1': 8 });
+  });
+
+  it('keeps base WTS durable state readable when all startup persistence writes fail', async () => {
+    const { chrome, storageState } = createChromeMock();
+    const baseRegistry = {
+      version: 2,
+      contextId: 'basewts2',
+      ownedContainers: {
+        interactive: { windowId: null, groupId: null },
+        automation: { windowId: 1, groupId: null },
+      },
+      leases: {
+        [adapterKey('write-failure')]: {
+          session: 'write-failure',
+          surface: 'adapter',
+          kind: 'owned',
+          windowId: 1,
+          owned: true,
+          preferredTabId: 1,
+          contextId: 'basewts2',
+          ownership: 'owned',
+          windowOwnership: 'owned',
+          lifecycle: 'ephemeral',
+          windowRole: 'automation',
+          idleDeadlineAt: Date.now() + 30_000,
+          updatedAt: Date.now(),
+        },
+      },
+    };
+    await chrome.storage.local.set({
+      opencli_context_id_v1: 'basewts2',
+      opencli_target_lease_registry_v2: baseRegistry,
+      opencli_control_fences_v1: { 'liepin-profile-2': 11 },
+    });
+    chrome.storage.local.set = vi.fn(async () => {
+      throw new Error('controlled storage write failure');
+    });
+    vi.stubGlobal('chrome', chrome);
+
+    const mod = await import('./background');
+    await vi.waitFor(() => {
+      expect(mod.__test__.getSession(adapterKey('write-failure'))).toEqual(expect.objectContaining({
+        preferredTabId: 1,
+        contextId: 'basewts2',
+      }));
+    });
+
+    expect(await mod.__test__.handleCommand({
+      id: 'activate-during-write-failure',
+      action: 'control',
+      op: 'activate',
+      controlKey: 'liepin-profile-2',
+    })).toEqual(expect.objectContaining({
+      ok: false,
+      errorCode: 'control_fence_persist_failed',
+    }));
+    expect(storageState.opencli_context_id_v1).toBe('basewts2');
+    expect(storageState.opencli_target_lease_registry_v2).toBe(baseRegistry);
+    expect(storageState.opencli_control_fences_v1).toEqual({ 'liepin-profile-2': 11 });
+    expect(Object.keys(storageState).some((key) => key.startsWith('wtscli_'))).toBe(false);
+  });
+
   it('announces the paired build identity and capabilities in extension hello', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
-    vi.stubGlobal('__OPENCLI_COMPAT_RANGE__', '>=1.8.6 <1.9.0');
-    vi.stubGlobal('__OPENCLI_BRIDGE_IDENTITY__', {
-      implementation: 'seektalent-opencli',
-      bridgeBuildId: 'seektalent-opencli-1.8.6+test',
-      protocolVersion: { major: 1, minor: 0 },
-      capabilities: ['tab.find.v1', 'tab.create-in-existing-window.v1'],
-    });
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
+    vi.stubGlobal('__WTSCLI_COMPAT_RANGE__', '>=0.1.0 <0.2.0');
 
     await import('./background');
     await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
@@ -1051,17 +1188,17 @@ describe('background tab isolation', () => {
     const hello = socket.sent.map((entry) => JSON.parse(entry)).find((entry) => entry.type === 'hello');
     expect(hello).toEqual(expect.objectContaining({
       type: 'hello',
-      implementation: 'seektalent-opencli',
-      bridgeBuildId: 'seektalent-opencli-1.8.6+test',
-      protocolVersion: { major: 1, minor: 0 },
-      capabilities: ['tab.find.v1', 'tab.create-in-existing-window.v1'],
+      implementation: EXTENSION_BRIDGE_IDENTITY.implementation,
+      bridgeBuildId: EXTENSION_BRIDGE_IDENTITY.bridgeBuildId,
+      protocolVersion: EXTENSION_BRIDGE_IDENTITY.protocolVersion,
+      capabilities: EXTENSION_BRIDGE_IDENTITY.capabilities,
     }));
   });
 
   it('keeps the active daemon connection when a superseded WebSocket closes later', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
 
     await import('./background');
     await vi.waitFor(() => {
@@ -1097,7 +1234,7 @@ describe('background tab isolation', () => {
   it('coalesces concurrent daemon connection attempts while the probe is in flight', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
-    const ping = deferred<{ ok: boolean }>();
+    const ping = deferred<Response>();
     const fetchMock = vi.fn(() => ping.promise);
     vi.stubGlobal('fetch', fetchMock);
 
@@ -1113,10 +1250,25 @@ describe('background tab isolation', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(MockWebSocket.instances).toHaveLength(0);
 
-    ping.resolve({ ok: true });
+    ping.resolve(wtsDaemonResponse());
     await vi.waitFor(() => {
       expect(MockWebSocket.instances).toHaveLength(1);
     });
+  });
+
+  it('does not open a WebSocket when the endpoint lacks the WTS transport marker', async () => {
+    const { chrome } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })));
+
+    const mod = await import('./background');
+    mod.__test__.resetReconnectState();
+    await mod.__test__.connectForTest();
+
+    expect(MockWebSocket.instances).toHaveLength(0);
   });
 
   it('uses the production-safe 30s keepalive alarm period', async () => {
@@ -1156,7 +1308,7 @@ describe('background tab isolation', () => {
   it('a successful daemon ping resets the backoff before the WebSocket attempt', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
 
     const mod = await import('./background');
     mod.__test__.resetReconnectState();
@@ -1171,7 +1323,7 @@ describe('background tab isolation', () => {
   it('ignores daemon commands delivered to a superseded WebSocket', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
 
     await import('./background');
     await vi.waitFor(() => {

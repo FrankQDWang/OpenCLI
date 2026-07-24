@@ -11,5 +11,5 @@ function parseEnvTimeout(envVar: string, fallback: number): number {
   return parsed;
 }
 
-export const DEFAULT_BROWSER_CONNECT_TIMEOUT = parseEnvTimeout('OPENCLI_BROWSER_CONNECT_TIMEOUT', 45);
-export const DEFAULT_BROWSER_COMMAND_TIMEOUT = parseEnvTimeout('OPENCLI_BROWSER_COMMAND_TIMEOUT', 60);
+export const DEFAULT_BROWSER_CONNECT_TIMEOUT = parseEnvTimeout('WTSCLI_BROWSER_CONNECT_TIMEOUT', 45);
+export const DEFAULT_BROWSER_COMMAND_TIMEOUT = parseEnvTimeout('WTSCLI_BROWSER_COMMAND_TIMEOUT', 60);

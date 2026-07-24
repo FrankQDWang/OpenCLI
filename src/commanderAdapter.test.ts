@@ -362,7 +362,7 @@ describe('commanderAdapter error envelope output', () => {
     expect(output).toContain('code: EMPTY_RESULT');
     expect(output).toContain('xsec_token');
     expect(output).toContain('--trace=retain-on-failure');
-    expect(output).toContain('opencli xiaohongshu note --trace retain-on-failure');
+    expect(output).toContain('wtscli xiaohongshu note --trace retain-on-failure');
 
     stderrSpy.mockRestore();
   });

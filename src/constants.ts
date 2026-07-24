@@ -2,18 +2,20 @@
  * Shared constants used across explore, synthesize, and pipeline modules.
  */
 
+import { DEFAULT_DAEMON_PORT as WTS_DEFAULT_DAEMON_PORT } from './runtime-identity.js';
+
 /** Default daemon port for HTTP/WebSocket communication with browser extension */
-export const DEFAULT_DAEMON_PORT = 19825;
+export const DEFAULT_DAEMON_PORT = WTS_DEFAULT_DAEMON_PORT;
 
 export function unsupportedDaemonPortEnvMessage(value?: string): string {
   const suffix = value ? ` (received ${value})` : '';
-  return `OPENCLI_DAEMON_PORT is no longer supported${suffix}. ` +
-    `The OpenCLI Chrome extension can only connect to localhost:${DEFAULT_DAEMON_PORT}. ` +
-    'Unset OPENCLI_DAEMON_PORT and rerun opencli.';
+  return `WTSCLI_DAEMON_PORT is fixed and cannot be overridden${suffix}. ` +
+    `The WTSCLI Chrome extension can only connect to 127.0.0.1:${DEFAULT_DAEMON_PORT}. ` +
+    'Unset WTSCLI_DAEMON_PORT and rerun wtscli.';
 }
 
 /**
- * True when OPENCLI_DAEMON_PORT carries no real configuration: unset, empty,
+ * True when WTSCLI_DAEMON_PORT carries no real configuration: unset, empty,
  * or equal to the default port. Launchers (notably OpenCLIApp) inject the
  * variable with the default value into every CLI they manage — rejecting that
  * harmless redundancy bricked all commands on fresh installs (#2068). Only a

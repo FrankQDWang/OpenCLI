@@ -94,7 +94,7 @@ describe('createProgram root help descriptions', () => {
       const status = auth.commands.find(cmd => cmd.name() === 'status')!;
       process.argv = ['node', 'opencli', 'auth', 'status', '--help', '-f', 'yaml'];
       const statusData = yaml.load(status.helpInformation()) as any;
-      expect(statusData.command).toBe('opencli auth status');
+      expect(statusData.command).toBe('wtscli auth status');
       expect(statusData.command_options.map((option: any) => option.name)).toEqual(expect.arrayContaining([
         'site',
         'full',
@@ -112,7 +112,7 @@ describe('createProgram root help descriptions', () => {
     const program = createProgram('', '');
 
     expect(descriptionFor(program, 'list')).toBe('List all available CLI commands');
-    expect(descriptionFor(program, 'doctor')).toBe('Diagnose opencli browser bridge connectivity');
+    expect(descriptionFor(program, 'doctor')).toBe('Diagnose WTSCLI browser bridge connectivity');
   });
 
   it('keeps site adapters out of root commands and lists sites in the root help tail', () => {
@@ -142,7 +142,7 @@ describe('createProgram root help descriptions', () => {
 
       expect(help).toContain('Site adapters (2):');
       expect(help).toContain('bilibili, youtube');
-      expect(help).toContain("opencli <site> --help -f yaml");
+      expect(help).toContain("wtscli <site> --help -f yaml");
       expect(help).not.toMatch(/\n  bilibili\s+hot/);
       expect(help).not.toMatch(/\n  youtube\s+search/);
     } finally {
@@ -408,7 +408,7 @@ describe('createProgram root help descriptions', () => {
           access: 'read',
           description: 'Bilibili hot videos',
           browser: false,
-          example: 'opencli bilibili hot -f yaml',
+          example: 'wtscli bilibili hot -f yaml',
           command_options: [{ name: 'limit', type: 'int', default: 20 }],
           columns: ['title', 'url'],
         },
@@ -494,7 +494,7 @@ describe('createProgram root help descriptions', () => {
       process.argv = ['node', 'opencli', 'bilibili', 'video', '--help', '-f', 'yaml'];
       const data = yaml.load(command!.helpInformation()) as any;
 
-      expect(data.usage).toBe('opencli bilibili video <bvid> [options]');
+      expect(data.usage).toBe('wtscli bilibili video <bvid> [options]');
       expect(data.browser).toBe(true);
       expect(data.domain).toBe('www.bilibili.com');
       expect(data.positionals).toMatchObject([{ name: 'bvid', positional: true, required: true }]);
@@ -520,7 +520,7 @@ describe('createProgram root help descriptions', () => {
       const data = yaml.load(browser!.helpInformation()) as any;
 
       expect(data.namespace).toBe('browser');
-      expect(data.command).toBe('opencli browser');
+      expect(data.command).toBe('wtscli browser');
       expect(data.description).toBe('Browser control — navigate, click, type, extract, wait (no LLM needed)');
       expect(data.command_count).toBeGreaterThan(20);
       // `--session` is now a hidden internal option; user-facing surface is the
@@ -536,7 +536,7 @@ describe('createProgram root help descriptions', () => {
           takes_value: 'required',
         }),
       ]));
-      expect(data.usage).toBe('opencli browser <session> <command> [options]');
+      expect(data.usage).toBe('wtscli browser <session> <command> [options]');
       expect(data.global_options).toEqual(expect.arrayContaining([
         expect.objectContaining({
           name: 'version',
@@ -554,27 +554,27 @@ describe('createProgram root help descriptions', () => {
       // agents construct the correct full invocation. `name` is the leaf
       // identifier (placeholder positionals are stripped).
       expect(click).toMatchObject({
-        command: 'opencli browser <session> click',
-        usage: 'opencli browser <session> click [target] [options]',
+        command: 'wtscli browser <session> click',
+        usage: 'wtscli browser <session> click [target] [options]',
         positionals: [{ name: 'target' }],
       });
       expect(click.command_options.map((option: any) => option.name)).toEqual(['role', 'name', 'label', 'text', 'testid', 'nth', 'tab']);
 
       const tabList = data.commands.find((cmd: any) => cmd.name === 'tab list');
       expect(tabList).toMatchObject({
-        command: 'opencli browser <session> tab list',
-        usage: 'opencli browser <session> tab list [options]',
+        command: 'wtscli browser <session> tab list',
+        usage: 'wtscli browser <session> tab list [options]',
         command_options: [],
       });
 
       const getText = data.commands.find((cmd: any) => cmd.name === 'get text');
       expect(getText).toMatchObject({
-        command: 'opencli browser <session> get text',
+        command: 'wtscli browser <session> get text',
         positionals: [{ name: 'target' }],
       });
       expect(data.structured_help).toMatchObject({
         formats: ['yaml', 'json'],
-        usage: 'opencli browser --help -f yaml',
+        usage: 'wtscli browser --help -f yaml',
       });
     } finally {
       process.argv = argv;
@@ -595,8 +595,8 @@ describe('createProgram root help descriptions', () => {
       expect(data).toMatchObject({
         namespace: 'browser',
         group: 'tab',
-        command: 'opencli browser <session> tab',
-        usage: 'opencli browser <session> tab <command> [args] [options]',
+        command: 'wtscli browser <session> tab',
+        usage: 'wtscli browser <session> tab <command> [args] [options]',
         command_count: 5,
       });
       expect(data.commands.map((cmd: any) => cmd.name)).toEqual([
@@ -607,15 +607,15 @@ describe('createProgram root help descriptions', () => {
         'tab select',
       ]);
       expect(data.commands.find((cmd: any) => cmd.name === 'tab close')).toMatchObject({
-        command: 'opencli browser <session> tab close',
-        usage: 'opencli browser <session> tab close [targetId] [options]',
+        command: 'wtscli browser <session> tab close',
+        usage: 'wtscli browser <session> tab close [targetId] [options]',
         positionals: [{ name: 'targetId', help: 'Target tab/page identity returned by "browser open", "browser tab new", or "browser tab list"' }],
       });
       // session is now a hidden internal option (consumed from the <session> positional).
       // namespace_options should only list user-facing options.
       expect(data.namespace_options.map((option: any) => option.name)).toEqual(['window']);
       expect(data.structured_help).toMatchObject({
-        usage: 'opencli browser <session> tab --help -f yaml',
+        usage: 'wtscli browser <session> tab --help -f yaml',
       });
     } finally {
       process.argv = argv;
@@ -636,11 +636,11 @@ describe('createProgram root help descriptions', () => {
       expect(data).toMatchObject({
         namespace: 'browser',
         name: 'click',
-        command: 'opencli browser <session> click',
-        usage: 'opencli browser <session> click [target] [options]',
+        command: 'wtscli browser <session> click',
+        usage: 'wtscli browser <session> click [target] [options]',
         positionals: [{ name: 'target' }],
         structured_help: {
-          usage: 'opencli browser <session> click --help -f yaml',
+          usage: 'wtscli browser <session> click --help -f yaml',
         },
       });
       expect(data.command_options.map((option: any) => option.name)).toEqual(['role', 'name', 'label', 'text', 'testid', 'nth', 'tab']);
@@ -664,12 +664,12 @@ describe('createProgram root help descriptions', () => {
 
       expect(data).toMatchObject({
         namespace: 'daemon',
-        command: 'opencli daemon',
-        usage: 'opencli daemon <command> [args] [options]',
-        description: 'Manage the opencli daemon',
+        command: 'wtscli daemon',
+        usage: 'wtscli daemon <command> [args] [options]',
+        description: 'Manage the WTSCLI daemon',
         command_count: 3,
         namespace_options: [],
-        structured_help: { usage: 'opencli daemon --help -f yaml' },
+        structured_help: { usage: 'wtscli daemon --help -f yaml' },
       });
       expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['restart', 'status', 'stop']);
       expect(data.global_options.map((option: any) => option.name)).toEqual(expect.arrayContaining(['version', 'profile']));
@@ -690,14 +690,14 @@ describe('createProgram root help descriptions', () => {
 
       expect(data).toMatchObject({
         namespace: 'plugin',
-        command: 'opencli plugin',
-        description: 'Manage opencli plugins',
+        command: 'wtscli plugin',
+        description: 'Manage WTSCLI plugins',
         namespace_options: [],
       });
       expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['create', 'install', 'list', 'uninstall', 'update']);
       const update = data.commands.find((cmd: any) => cmd.name === 'update');
       expect(update).toMatchObject({
-        usage: 'opencli plugin update [name] [options]',
+        usage: 'wtscli plugin update [name] [options]',
         positionals: [{ name: 'name' }],
       });
       expect(update.command_options.map((option: any) => option.name)).toEqual(['all']);
@@ -722,7 +722,7 @@ describe('createProgram root help descriptions', () => {
       expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['eject', 'reset', 'status']);
       const reset = data.commands.find((cmd: any) => cmd.name === 'reset');
       expect(reset).toMatchObject({
-        usage: 'opencli adapter reset [site] [options]',
+        usage: 'wtscli adapter reset [site] [options]',
         positionals: [{ name: 'site' }],
       });
       expect(reset.command_options.map((option: any) => option.name)).toEqual(['all']);
@@ -749,7 +749,7 @@ describe('createProgram root help descriptions', () => {
       expect(data.commands.map((cmd: any) => cmd.name)).toEqual(['list', 'rename', 'use']);
       const rename = data.commands.find((cmd: any) => cmd.name === 'rename');
       expect(rename).toMatchObject({
-        usage: 'opencli profile rename <contextId> <alias> [options]',
+        usage: 'wtscli profile rename <contextId> <alias> [options]',
         positionals: [
           { name: 'contextId', required: true },
           { name: 'alias', required: true },
@@ -770,7 +770,7 @@ describe('resolveBrowserVerifyInvocation', () => {
 
     expect(resolveBrowserVerifyInvocation({
       projectRoot,
-      readFile: () => JSON.stringify({ bin: { opencli: 'dist/src/main.js' } }),
+      readFile: () => JSON.stringify({ bin: { wtscli: 'dist/src/main.js' } }),
       fileExists: (candidate) => exists.has(candidate),
     })).toEqual({
       binary: process.execPath,
@@ -867,7 +867,7 @@ describe('resolveSitemapAvailabilityForUrl', () => {
   it('detects local sitemap overlays using adapter registry domain matches', () => {
     const homeDir = path.join(os.tmpdir(), 'opencli-sitemap-home');
     const packageRoot = path.join(os.tmpdir(), 'opencli-sitemap-package');
-    const localSitemap = path.join(homeDir, '.opencli', 'sites', 'hackernews', 'sitemap');
+    const localSitemap = path.join(homeDir, '.seektalent', 'wtscli', 'sites', 'hackernews', 'sitemap');
     const exists = new Set([localSitemap]);
 
     const report = resolveSitemapAvailabilityForUrl('https://news.ycombinator.com/item?id=1', {
@@ -889,7 +889,7 @@ describe('resolveSitemapAvailabilityForUrl', () => {
   it('reports global+local when both sitemap layers exist', () => {
     const homeDir = path.join(os.tmpdir(), 'opencli-sitemap-home');
     const packageRoot = path.join(os.tmpdir(), 'opencli-sitemap-package');
-    const localSitemap = path.join(homeDir, '.opencli', 'sites', 'twitter', 'sitemap.md');
+    const localSitemap = path.join(homeDir, '.seektalent', 'wtscli', 'sites', 'twitter', 'sitemap.md');
     const globalSitemap = path.join(packageRoot, 'sitemaps', 'twitter');
     const exists = new Set([localSitemap, globalSitemap]);
 
@@ -933,7 +933,7 @@ describe('browser verify', () => {
     process.env.USERPROFILE = fakeHome;
 
     try {
-      const adapterDir = path.join(fakeHome, '.opencli', 'clis', 'hn');
+      const adapterDir = path.join(fakeHome, '.seektalent', 'wtscli', 'clis', 'hn');
       fs.mkdirSync(adapterDir, { recursive: true });
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
@@ -960,7 +960,7 @@ describe('browser verify', () => {
     process.env.USERPROFILE = fakeHome;
 
     try {
-      const adapterDir = path.join(fakeHome, '.opencli', 'clis', 'hn');
+      const adapterDir = path.join(fakeHome, '.seektalent', 'wtscli', 'clis', 'hn');
       fs.mkdirSync(adapterDir, { recursive: true });
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
@@ -988,14 +988,14 @@ describe('browser verify', () => {
     mockExecFileSync.mockReturnValue(JSON.stringify([{ title: 'ok' }]));
 
     try {
-      const adapterDir = path.join(fakeHome, '.opencli', 'clis', 'hn');
+      const adapterDir = path.join(fakeHome, '.seektalent', 'wtscli', 'clis', 'hn');
       fs.mkdirSync(adapterDir, { recursive: true });
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
       const program = createProgram('', '');
       await program.parseAsync(['node', 'opencli', 'browser', '--session', 'test', 'verify', 'hn/top', '--write-fixture', '--seed-args', 'opencli-verify']);
 
-      const fixtureFile = path.join(fakeHome, '.opencli', 'sites', 'hn', 'verify', 'top.json');
+      const fixtureFile = path.join(fakeHome, '.seektalent', 'wtscli', 'sites', 'hn', 'verify', 'top.json');
       const fixture = JSON.parse(fs.readFileSync(fixtureFile, 'utf-8'));
       expect(fixture.args).toEqual(['opencli-verify']);
       expect(fixture.expect.columns).toEqual(['title']);
@@ -1019,7 +1019,7 @@ describe('browser verify', () => {
     consoleLogSpy.mockClear();
 
     try {
-      const adapterDir = path.join(fakeHome, '.opencli', 'clis', 'hn');
+      const adapterDir = path.join(fakeHome, '.seektalent', 'wtscli', 'clis', 'hn');
       fs.mkdirSync(adapterDir, { recursive: true });
       fs.writeFileSync(path.join(adapterDir, 'top.js'), 'export default {};\n', 'utf-8');
 
@@ -1062,7 +1062,7 @@ describe('profile list', () => {
         extensionVersion: '1.0.3',
         pending: 0,
         memoryMB: 20,
-        port: 19825,
+        port: 19826,
       }),
     } as Response);
     const program = createProgram('', '');
@@ -1071,7 +1071,7 @@ describe('profile list', () => {
 
     const output = stdoutSpy.mock.calls.flat().join('\n');
     expect(output).toContain('stale');
-    expect(output).toContain('opencli daemon restart');
+    expect(output).toContain('wtscli daemon restart');
     expect(output).not.toContain('No Browser Bridge profiles connected');
   });
 
@@ -1087,7 +1087,7 @@ describe('profile list', () => {
         profiles: [],
         pending: 0,
         memoryMB: 20,
-        port: 19825,
+        port: 19826,
       }),
     } as Response);
     const program = createProgram('', '');
@@ -1096,7 +1096,7 @@ describe('profile list', () => {
 
     const output = stdoutSpy.mock.calls.flat().join('\n');
     expect(output).toContain('No Browser Bridge profiles connected');
-    expect(output).not.toContain('opencli daemon restart');
+    expect(output).not.toContain('wtscli daemon restart');
   });
 });
 
@@ -1110,12 +1110,12 @@ describe('browser tab targeting commands', () => {
 
   beforeEach(() => {
     process.exitCode = undefined;
-    process.env.OPENCLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'opencli-browser-tab-state-'));
+    process.env.WTSCLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'wtscli-browser-tab-state-'));
     consoleLogSpy.mockClear();
     stderrSpy.mockClear();
     mockBrowserConnect.mockClear();
     mockBrowserClose.mockReset().mockResolvedValue(undefined);
-    delete process.env.OPENCLI_WINDOW;
+    delete process.env.WTSCLI_WINDOW;
     mockBindTab.mockReset().mockResolvedValue({
       session: 'test',
       page: 'tab-2',
@@ -1481,7 +1481,7 @@ describe('browser tab targeting commands', () => {
   });
 
   it('clears a saved default target when it is no longer present in the current session', async () => {
-    const cacheDir = String(process.env.OPENCLI_CACHE_DIR);
+    const cacheDir = String(process.env.WTSCLI_CACHE_DIR);
     const program = createProgram('', '');
 
     await program.parseAsync(['node', 'opencli', 'browser', '--session', 'test', 'tab', 'select', 'tab-2']);
@@ -1828,7 +1828,7 @@ describe('browser network command', () => {
 
   beforeEach(() => {
     process.exitCode = undefined;
-    process.env.OPENCLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'opencli-browser-net-'));
+    process.env.WTSCLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'wtscli-browser-net-'));
     consoleLogSpy.mockClear();
     mockBrowserConnect.mockClear();
     mockBrowserClose.mockReset().mockResolvedValue(undefined);
@@ -1860,7 +1860,7 @@ describe('browser network command', () => {
   });
 
   it('emits JSON with shape previews and persists the capture to disk', async () => {
-    const cacheDir = String(process.env.OPENCLI_CACHE_DIR);
+    const cacheDir = String(process.env.WTSCLI_CACHE_DIR);
     const program = createProgram('', '');
 
     await program.parseAsync(['node', 'opencli', 'browser', '--session', 'test', 'network']);
@@ -1875,7 +1875,7 @@ describe('browser network command', () => {
   });
 
   it('uses the selected browser session for network cache scope', async () => {
-    const cacheDir = String(process.env.OPENCLI_CACHE_DIR);
+    const cacheDir = String(process.env.WTSCLI_CACHE_DIR);
     browserState.page = {
       ...browserState.page,
       session: 'custom',
@@ -2028,7 +2028,7 @@ describe('browser network command', () => {
   });
 
   it('surfaces cache_warning in the envelope when persistence fails', async () => {
-    const cacheDir = String(process.env.OPENCLI_CACHE_DIR);
+    const cacheDir = String(process.env.WTSCLI_CACHE_DIR);
     // Pre-create the target path as a file where a directory is expected,
     // forcing the mkdir inside saveNetworkCache to throw.
     const clashDir = path.join(cacheDir, 'browser-network');
@@ -2383,7 +2383,7 @@ describe('browser get html command', () => {
 
   beforeEach(() => {
     process.exitCode = undefined;
-    process.env.OPENCLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'opencli-html-'));
+    process.env.WTSCLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'wtscli-html-'));
     consoleLogSpy.mockClear();
     mockBrowserConnect.mockClear();
     mockBrowserClose.mockReset().mockResolvedValue(undefined);
@@ -2547,7 +2547,7 @@ function installSelectorFirstTestHarness(label: string, pageOverrides: () => Par
 
   beforeEach(() => {
     process.exitCode = undefined;
-    process.env.OPENCLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), `opencli-${label}-`));
+    process.env.WTSCLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), `wtscli-${label}-`));
     consoleLogSpy.mockClear();
     mockBrowserConnect.mockClear();
     mockBrowserClose.mockReset().mockResolvedValue(undefined);

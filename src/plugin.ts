@@ -1,8 +1,8 @@
 /**
  * Plugin management: install, uninstall, and list plugins.
  *
- * Plugins live in ~/.opencli/plugins/<name>/.
- * Monorepo clones live in ~/.opencli/monorepos/<repo-name>/.
+ * Plugins live in ~/.seektalent/wtscli/plugins/<name>/.
+ * Monorepo clones live in ~/.seektalent/wtscli/monorepos/<repo-name>/.
  * Install source format: "github:user/repo", "github:user/repo/subplugin",
  * "https://github.com/user/repo", "file:///local/plugin", or a local directory path.
  */
@@ -16,6 +16,7 @@ import { PLUGINS_DIR } from './discovery.js';
 import { getErrorMessage, PluginError } from './errors.js';
 import { log } from './logger.js';
 import { isRecord } from './utils.js';
+import { getWtscliStateRoot } from './runtime-identity.js';
 import {
   readPluginManifest,
   isMonorepo,
@@ -34,12 +35,12 @@ function getHomeDir(): string {
 
 /** Path to the lock file that tracks installed plugin versions. */
 export function getLockFilePath(): string {
-  return path.join(getHomeDir(), '.opencli', 'plugins.lock.json');
+  return path.join(getWtscliStateRoot(), 'plugins.lock.json');
 }
 
-/** Monorepo clones directory: ~/.opencli/monorepos/ */
+/** Monorepo clones directory inside the WTSCLI-owned state namespace. */
 export function getMonoreposDir(): string {
-  return path.join(getHomeDir(), '.opencli', 'monorepos');
+  return path.join(getWtscliStateRoot(), 'monorepos');
 }
 
 export type PluginSourceRecord =
@@ -195,7 +196,7 @@ function resolveStoredPluginSource(lockEntry: LockEntry | undefined, pluginDir: 
 /**
  * Move a directory, with EXDEV fallback.
  * fs.renameSync fails when source and destination are on different
- * filesystems (e.g. /tmp → ~/.opencli). In that case we copy then remove.
+ * filesystems (e.g. /tmp → ~/.seektalent/wtscli). In that case we copy then remove.
  */
 type MoveDirFsOps = Pick<typeof fs, 'renameSync' | 'cpSync' | 'rmSync'>;
 
@@ -227,7 +228,7 @@ function createSiblingTempPath(dest: string, kind: 'tmp' | 'bak'): string {
 function cloneRepoToTemp(cloneUrl: string): string {
   const tmpCloneDir = path.join(
     os.tmpdir(),
-    `opencli-clone-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    `wtscli-clone-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   );
 
   try {
@@ -737,7 +738,7 @@ function installSinglePlugin(
   const targetDir = path.join(PLUGINS_DIR, pluginName);
 
   if (fs.existsSync(targetDir)) {
-    throw new PluginError(`Plugin "${pluginName}" is already installed at ${targetDir}`, 'Use "opencli plugin uninstall" first, or pick a different name.');
+    throw new PluginError(`Plugin "${pluginName}" is already installed at ${targetDir}`, 'Use "wtscli plugin uninstall" first, or pick a different name.');
   }
 
   ensureStandalonePluginReady(cloneDir);
@@ -775,7 +776,7 @@ function installLocalPlugin(localPath: string, name: string): string {
   if (manifest?.opencli && !checkCompatibility(manifest.opencli)) {
     throw new PluginError(
       `Plugin requires opencli ${manifest.opencli}, but current version is incompatible.`,
-      'Upgrade opencli to a compatible version.',
+      'Upgrade wtscli to a compatible version.',
     );
   }
 
@@ -783,7 +784,7 @@ function installLocalPlugin(localPath: string, name: string): string {
   const targetDir = path.join(PLUGINS_DIR, pluginName);
 
   if (fs.existsSync(targetDir)) {
-    throw new PluginError(`Plugin "${pluginName}" is already installed at ${targetDir}`, 'Use "opencli plugin uninstall" first, or pick a different name.');
+    throw new PluginError(`Plugin "${pluginName}" is already installed at ${targetDir}`, 'Use "wtscli plugin uninstall" first, or pick a different name.');
   }
 
   const validation = validatePluginStructure(localPath);

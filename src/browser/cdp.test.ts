@@ -44,7 +44,7 @@ describe('CDPBridge cookies', () => {
   });
 
   it('filters cookies by actual domain match instead of substring match', async () => {
-    vi.stubEnv('OPENCLI_CDP_ENDPOINT', 'ws://127.0.0.1:9222/devtools/page/1');
+    vi.stubEnv('WTSCLI_CDP_ENDPOINT', 'ws://127.0.0.1:9222/devtools/page/1');
 
     const bridge = new CDPBridge();
     vi.spyOn(bridge, 'send').mockResolvedValue({
@@ -65,7 +65,7 @@ describe('CDPBridge cookies', () => {
   });
 
   it('exposes native input helpers on direct CDP pages', async () => {
-    vi.stubEnv('OPENCLI_CDP_ENDPOINT', 'ws://127.0.0.1:9222/devtools/page/1');
+    vi.stubEnv('WTSCLI_CDP_ENDPOINT', 'ws://127.0.0.1:9222/devtools/page/1');
 
     const bridge = new CDPBridge();
     const send = vi.spyOn(bridge, 'send').mockResolvedValue({});

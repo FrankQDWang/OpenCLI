@@ -1,6 +1,51 @@
 {
-  "implementation": "seektalent-opencli",
-  "bridgeBuildId": "seektalent-opencli-0.1.0+wtscli.1",
+  "schemaVersion": "wtscli.bridge_identity.v1",
+  "implementation": "seektalent-wtscli",
+  "bridgeBuildId": "seektalent-wtscli-0.1.0+wtscli.2",
+  "runtimeIdentity": {
+    "endpoint": {
+      "host": "127.0.0.1",
+      "port": 19826
+    },
+    "transport": {
+      "requestHeader": {
+        "name": "X-WTSCLI",
+        "value": "1"
+      },
+      "responseHeader": {
+        "name": "X-WTSCLI-Bridge",
+        "value": "wtscli.browser-bridge.v1"
+      },
+      "ownerProofHeader": {
+        "name": "X-WTSCLI-Owner"
+      },
+      "ownershipHeader": {
+        "name": "X-WTSCLI-Ownership"
+      },
+      "protocol": {
+        "name": "wtscli.browser-bridge",
+        "version": {
+          "major": 1,
+          "minor": 0
+        }
+      }
+    },
+    "extension": {
+      "id": "aijmoehobdolindhgdljiaiimngpghcn",
+      "origin": "chrome-extension://aijmoehobdolindhgdljiaiimngpghcn"
+    },
+    "state": {
+      "rootDir": "~/.seektalent/wtscli",
+      "envPrefix": "WTSCLI_",
+      "configDirEnv": "WTSCLI_CONFIG_DIR",
+      "cacheDirEnv": "WTSCLI_CACHE_DIR",
+      "ownershipFile": "daemon/ownership.json"
+    },
+    "package": {
+      "name": "wtscli",
+      "entrypoint": "wtscli"
+    }
+  },
   "protocolVersion": {
     "major": 1,
     "minor": 0

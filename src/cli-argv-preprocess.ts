@@ -1,6 +1,6 @@
 /**
- * argv preprocessing: rewrite `opencli browser <session> <subcommand> ...`
- * into `opencli browser --session <session> <subcommand> ...` so commander
+ * argv preprocessing: rewrite `wtscli browser <session> <subcommand> ...`
+ * into `wtscli browser --session <session> <subcommand> ...` so commander
  * (which can't combine a parent positional with subcommand dispatch) can parse it.
  *
  * The user-facing form is positional; the internal form uses --session. Help text
@@ -109,7 +109,7 @@ export function rewriteBrowserArgv(argv: readonly string[]): string[] {
   // The retired `--session` flag must not be a working public entrance.
   if (next === '--session' || next === '--session=' || next.startsWith('--session=')) {
     throw new BrowserSessionArgvError(
-      'The `--session` flag is no longer a public option. Use the positional form: opencli browser <session> <command>',
+      'The `--session` flag is no longer a public option. Use the positional form: wtscli browser <session> <command>',
     );
   }
   if (next.startsWith('-')) return result;

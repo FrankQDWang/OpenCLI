@@ -6,7 +6,7 @@
  */
 
 function isVerbose(): boolean {
-  return !!process.env.OPENCLI_VERBOSE;
+  return !!process.env.WTSCLI_VERBOSE;
 }
 
 export const log = {
@@ -35,7 +35,7 @@ export const log = {
     process.stderr.write(`✖  ${msg}\n`);
   },
 
-  /** Verbose output (shown when -v flag or OPENCLI_VERBOSE is set) */
+  /** Verbose output (shown when -v flag or WTSCLI_VERBOSE is set) */
   verbose(msg: string): void {
     if (isVerbose()) {
       process.stderr.write(`[verbose] ${msg}\n`);

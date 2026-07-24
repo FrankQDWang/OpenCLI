@@ -1,12 +1,12 @@
 /**
  * CLI commands for daemon lifecycle:
- *   opencli daemon status — show daemon state
- *   opencli daemon stop   — graceful shutdown
- *   opencli daemon restart — graceful shutdown, then start a fresh daemon
+ *   wtscli daemon status — show daemon state
+ *   wtscli daemon stop   — graceful shutdown
+ *   wtscli daemon restart — graceful shutdown, then start a fresh daemon
  */
 
 import { fetchDaemonStatus, requestDaemonShutdown } from '../browser/daemon-transport.js';
-import { restartDaemon } from '../browser/daemon-lifecycle.js';
+import { restartDaemon, waitForDaemonStop } from '../browser/daemon-lifecycle.js';
 import { formatDuration } from '../download/progress.js';
 import { log } from '../logger.js';
 import { PKG_VERSION } from '../version.js';
@@ -32,9 +32,9 @@ export async function daemonStatus(): Promise<void> {
       : 'connected (version unknown)';
   } else if (status.profileRequired) {
     const count = status.profiles?.length ?? 0;
-    extensionLabel = `${count} ${count === 1 ? 'profile' : 'profiles'} connected, none selected — run \`opencli profile use <name>\``;
+    extensionLabel = `${count} ${count === 1 ? 'profile' : 'profiles'} connected, none selected — run \`wtscli profile use <name>\``;
   } else if (status.profileDisconnected) {
-    extensionLabel = 'requested profile not connected — run `opencli profile use <name>`';
+    extensionLabel = 'requested profile not connected — run `wtscli profile use <name>`';
   } else {
     extensionLabel = 'disconnected';
   }
@@ -42,7 +42,7 @@ export async function daemonStatus(): Promise<void> {
   const daemonVersion = formatDaemonVersion(status);
   const stale = isDaemonStale(status, PKG_VERSION);
   console.log(`Daemon: ${stale ? 'stale' : 'running'} (PID ${status.pid})`);
-  console.log(`Version: ${daemonVersion}${stale ? ` (CLI v${PKG_VERSION}; run: opencli daemon restart)` : ''}`);
+  console.log(`Version: ${daemonVersion}${stale ? ` (CLI v${PKG_VERSION}; run: wtscli daemon restart)` : ''}`);
   console.log(`Uptime: ${formatDuration(Math.round(status.uptime * 1000))}`);
   console.log(`Extension: ${extensionLabel}`);
   if (status.profiles && status.profiles.length > 0) {
@@ -63,10 +63,10 @@ export async function daemonStop(): Promise<void> {
   }
 
   const ok = await requestDaemonShutdown();
-  if (ok) {
+  if (ok && await waitForDaemonStop(3000)) {
     log.success('Daemon stopped.');
   } else {
-    log.error('Failed to stop daemon.');
+    log.error('Authenticated daemon shutdown did not complete; the process was left untouched.');
     process.exitCode = 1;
   }
 }

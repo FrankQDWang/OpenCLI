@@ -1,5 +1,4 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Command, InvalidArgumentError, Option } from 'commander';
@@ -14,6 +13,7 @@ import {
   getRegistry,
 } from '../registry.js';
 import { render as renderOutput } from '../output.js';
+import { getWtscliConfigDir } from '../runtime-identity.js';
 
 type AuthStatus = 'logged_in' | 'not_logged_in' | 'unknown' | 'error';
 type AuthStatusMode = 'quick' | 'full';
@@ -85,7 +85,7 @@ function parseSiteFilter(raw: string | undefined): Set<string> | null {
 }
 
 function defaultAuthRefreshStatePath(): string {
-  return join(homedir(), '.opencli', 'auth-refresh.json');
+  return join(getWtscliConfigDir(), 'auth-refresh.json');
 }
 
 function emptyAuthRefreshState(): AuthRefreshState {

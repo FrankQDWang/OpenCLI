@@ -2,7 +2,7 @@
  * Verify fixture: structural expectations for `opencli browser verify` output.
  *
  * The adapter-author skill runbook says every published adapter must write a
- * fixture under `~/.opencli/sites/<site>/verify/<command>.json` so later verify
+ * fixture under `~/.seektalent/wtscli/sites/<site>/verify/<command>.json` so later verify
  * runs can catch shape regressions (missing columns, wrong types, bleeding
  * values) without relying on exact content match — BBS / news / market data is
  * too volatile for value equality.
@@ -28,8 +28,8 @@
  *   }
  */
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { getWtscliConfigDir } from '../runtime-identity.js';
 
 export type FixtureExpect = {
   rowCount?: { min?: number; max?: number };
@@ -108,7 +108,7 @@ const ID_SHAPED_KEY_PATTERNS = [
 ];
 
 export function fixturePath(site: string, command: string): string {
-  return path.join(os.homedir(), '.opencli', 'sites', site, 'verify', `${command}.json`);
+  return path.join(getWtscliConfigDir(), 'sites', site, 'verify', `${command}.json`);
 }
 
 export function loadFixture(site: string, command: string): Fixture | null {

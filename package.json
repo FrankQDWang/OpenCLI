@@ -1,5 +1,5 @@
 {
-  "name": "@jackwener/opencli",
+  "name": "wtscli",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
@@ -11,7 +11,6 @@
   "type": "module",
   "main": "dist/src/main.js",
   "bin": {
-    "opencli": "dist/src/main.js",
     "wtscli": "dist/src/main.js"
   },
   "exports": {
@@ -35,6 +34,7 @@
     "dist/src/",
     "bridge-identity.json",
     "clis/",
+    "internal/opencli-compat/",
     "skills/opencli-*/**",
     "cli-manifest.json",
     "scripts/",
@@ -45,15 +45,15 @@
     "dev": "tsx src/main.ts",
     "dev:bun": "bun src/main.ts",
     "build": "npm run clean-dist && npm run copy-yaml && npm run build-manifest",
-    "prebuild-manifest": "tsc --build && node -e \"require('fs').chmodSync('dist/src/main.js', 0o755)\"",
+    "prebuild-manifest": "node scripts/install-internal-compat.js --compat-only && tsc --build && node -e \"require('fs').chmodSync('dist/src/main.js', 0o755)\"",
     "build-manifest": "tsx src/build-manifest.ts",
     "build:seektalent-bundle": "node scripts/build-seektalent-bundle.mjs",
     "clean-dist": "node scripts/clean-dist.cjs",
     "copy-yaml": "node scripts/copy-yaml.cjs",
     "start": "node dist/src/main.js",
     "start:bun": "bun dist/src/main.js",
-    "preuninstall": "node -e \"fetch('http://127.0.0.1:19825/shutdown',{method:'POST',headers:{'X-OpenCLI':'1'},signal:AbortSignal.timeout(3000)}).catch(()=>{})\" || true",
-    "postinstall": "node scripts/postinstall.js || true; node scripts/fetch-adapters.js || true",
+    "preuninstall": "node dist/src/preuninstall.js || true",
+    "postinstall": "node scripts/install-internal-compat.js",
     "typecheck": "tsc --noEmit",
     "prepare": "node scripts/prepare.cjs",
     "prepublishOnly": "npm run build",
@@ -82,15 +82,19 @@
     "url": "git+https://github.com/FrankQDWang/wtscli.git"
   },
   "dependencies": {
+    "@jackwener/opencli": "file:internal/opencli-compat",
     "@mozilla/readability": "^0.6.0",
     "cli-table3": "^0.6.5",
     "commander": "^14.0.3",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.3.0",
     "turndown": "^7.2.2",
     "turndown-plugin-gfm": "^1.0.2",
     "undici": "^6.27.0",
     "ws": "^8.18.0"
   },
+  "bundledDependencies": [
+    "@jackwener/opencli"
+  ],
   "devDependencies": {
     "@types/jsdom": "^27.0.0",
     "@types/js-yaml": "^4.0.9",

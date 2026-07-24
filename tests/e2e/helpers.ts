@@ -42,7 +42,7 @@ export async function runCli(
   const timeout = opts.timeout ?? 25_000;
   const maxBuffer = opts.maxBuffer ?? DEFAULT_MAX_BUFFER_BYTES;
   try {
-    const runtime = process.env.OPENCLI_TEST_RUNTIME || 'node';
+    const runtime = process.env.WTSCLI_TEST_RUNTIME || 'node';
     const { stdout, stderr } = await exec(runtime, [MAIN, ...args], {
       cwd: ROOT,
       timeout,

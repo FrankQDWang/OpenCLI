@@ -2,7 +2,7 @@
   "name": "wtscli-extension",
   "version": "0.1.0",
   "private": true,
-  "opencli": {
+  "wtscli": {
     "compatRange": ">=0.1.0 <0.2.0"
   },
   "type": "module",

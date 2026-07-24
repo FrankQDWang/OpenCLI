@@ -1,10 +1,12 @@
+import { WTS_EXTENSION_ORIGIN, WTSCLI_RUNTIME_IDENTITY } from './runtime-identity.js';
+
 export const COMMAND_RESULT_UNKNOWN_CODE = 'command_result_unknown';
 
 export const COMMAND_RESULT_UNKNOWN_HINT =
   'Inspect the browser/session state before retrying. Do not blindly retry write commands such as navigate, click, type, or eval.';
 
 export const PROFILE_DISCONNECTED_HINT =
-  'Open that Chrome profile and make sure the OpenCLI extension is enabled, or choose another profile with opencli profile use <name>.';
+  'Open that Chrome profile and make sure the WTSCLI extension is enabled, or choose another profile with wtscli profile use <name>.';
 
 export type BridgePeerIdentity = {
   implementation: string | null;
@@ -32,15 +34,15 @@ export function validateBridgePeerIdentity(
   if (actual.implementation !== expected.implementation) {
     return {
       errorCode: 'bridge_wrong_implementation',
-      error: 'The connected Browser Bridge extension is not the SeekTalent OpenCLI implementation.',
-      errorHint: 'Disable the other OpenCLI extension, then reload the Browser Bridge bundled with SeekTalent.',
+      error: 'The connected Browser Bridge extension is not the SeekTalent WTSCLI implementation.',
+      errorHint: 'Reload the exact WTSCLI Browser Bridge bundled with SeekTalent.',
       status: 409,
     };
   }
   if (actual.bridgeBuildId !== expected.bridgeBuildId) {
     return {
       errorCode: 'bridge_build_mismatch',
-      error: 'The OpenCLI daemon and Browser Bridge extension are from different builds.',
+      error: 'The WTSCLI daemon and Browser Bridge extension are from different builds.',
       errorHint: 'Reload Chrome after installing the matching SeekTalent browser bridge bundle.',
       status: 409,
     };
@@ -54,7 +56,7 @@ export function validateBridgePeerIdentity(
     return {
       errorCode: 'bridge_protocol_mismatch',
       error: 'The connected Browser Bridge extension uses an incompatible protocol version.',
-      errorHint: 'Install or roll back the OpenCLI daemon and extension as one paired bundle.',
+      errorHint: 'Install or roll back the WTSCLI daemon and extension as one paired bundle.',
       status: 409,
     };
   }
@@ -65,7 +67,7 @@ export function validateBridgePeerIdentity(
     return {
       errorCode: 'bridge_capability_missing',
       error: `The connected Browser Bridge extension is missing required capabilities: ${missingCapabilities.join(', ')}.`,
-      errorHint: 'Install or roll back the OpenCLI daemon and extension as one paired bundle.',
+      errorHint: 'Install or roll back the WTSCLI daemon and extension as one paired bundle.',
       status: 409,
     };
   }
@@ -102,7 +104,7 @@ export function buildExtensionDisconnectFailure(input: {
 }
 
 export type ProfileRouteInput = {
-  /** Hard requirement (--profile / OPENCLI_PROFILE) — never falls back. */
+  /** Hard requirement (--profile / WTSCLI_PROFILE) — never falls back. */
   requestedContextId?: string;
   /** Soft preference (config defaultContextId) — arbitrated against live state. */
   preferredContextId?: string;
@@ -151,15 +153,15 @@ export function resolveProfileRoute(input: ProfileRouteInput): ProfileRouteResul
         ? `Default browser profile "${preferred}" is not connected and multiple profiles are available; choose one with --profile.`
         : 'Multiple Browser Bridge profiles are connected; choose one with --profile.',
       errorHint: preferred
-        ? 'Run opencli profile list, then update the stale default with opencli profile use <name> or pass --profile <name>.'
-        : 'Run opencli profile list, then use opencli --profile <name> ... or opencli profile use <name>.',
+        ? 'Run wtscli profile list, then update the stale default with wtscli profile use <name> or pass --profile <name>.'
+        : 'Run wtscli profile list, then use wtscli --profile <name> ... or wtscli profile use <name>.',
     };
   }
 
   return {
     ok: false,
     errorCode: 'extension_not_connected',
-    error: 'Extension not connected. Please install the opencli Browser Bridge extension.',
+    error: 'Extension not connected. Please install the WTSCLI Browser Bridge extension.',
   };
 }
 
@@ -185,9 +187,14 @@ export function buildCommandDispatchFailure(contextId: string): DaemonFailureCon
 
 export function getResponseCorsHeaders(pathname: string, origin?: string): Record<string, string> | undefined {
   if (pathname !== '/ping') return undefined;
-  if (!origin || !origin.startsWith('chrome-extension://')) return undefined;
+  if (!isAllowedWtsExtensionOrigin(origin)) return undefined;
   return {
     'Access-Control-Allow-Origin': origin,
+    'Access-Control-Expose-Headers': WTSCLI_RUNTIME_IDENTITY.transport.responseHeader.name,
     Vary: 'Origin',
   };
+}
+
+export function isAllowedWtsExtensionOrigin(origin: string | undefined): origin is string {
+  return origin === WTS_EXTENSION_ORIGIN;
 }

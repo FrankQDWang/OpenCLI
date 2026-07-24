@@ -1,5 +1,5 @@
 /**
- * opencli doctor — diagnose browser connectivity.
+ * wtscli doctor — diagnose browser connectivity.
  *
  * Simplified for the daemon-based architecture.
  */
@@ -129,7 +129,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
       'This usually means the daemon crashed or exited right after serving the live probe.',
     );
   } else if (!daemonRunning) {
-    issues.push('Daemon is not running. It should start automatically when you run an opencli browser command.');
+    issues.push('Daemon is not running. It should start automatically when you run a wtscli browser command.');
   }
   if (daemonStale && opts.cliVersion) {
     issues.push(staleDaemonIssue(health.status, opts.cliVersion));
@@ -143,19 +143,19 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     if (health.state === 'profile-required') {
       issues.push(
         'Multiple Chrome profiles are connected to the daemon, but no default profile was selected.\n' +
-        '  Run opencli profile list, then opencli profile use <name>, or pass --profile <name>.',
+        '  Run wtscli profile list, then wtscli profile use <name>, or pass --profile <name>.',
       );
     } else if (health.state === 'profile-disconnected') {
       issues.push(
         `Selected browser profile is not connected: ${health.status?.contextId ?? 'unknown'}.\n` +
-        '  Open that Chrome profile and make sure the OpenCLI extension is enabled.',
+        '  Open that Chrome profile and make sure the WTSCLI extension is enabled.',
       );
     } else {
       issues.push(
         'Daemon is running but the Chrome/Chromium extension is not connected.\n' +
-        'If the extension is already installed, try: opencli daemon restart\n' +
+        'If the extension is already installed, try: wtscli daemon restart\n' +
         'If the extension is not installed:\n' +
-        '  1. Download from https://github.com/jackwener/opencli/releases\n' +
+        '  1. Install the matching WTSCLI extension bundled with SeekTalent\n' +
         '  2. Open chrome://extensions/ → Enable Developer Mode\n' +
         '  3. Click "Load unpacked" → select the extension folder',
       );
@@ -165,7 +165,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     issues.push(
       'Extension is connected but did not report a version.\n' +
       '  This usually means an outdated Browser Bridge extension.\n' +
-      '  Reload or reinstall the extension from: https://github.com/jackwener/opencli/releases',
+      '  Reload or reinstall the matching WTSCLI extension bundled with SeekTalent.',
     );
   }
   if (!connectivity.ok) {
@@ -186,7 +186,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     issues.push(
       `Default browser profile is stale: ${label} is not connected (the extension instance it names no longer exists).\n` +
       `  ${fallbackNote}\n` +
-      '  Refresh it with: opencli profile list, then opencli profile use <name>.',
+      '  Refresh it with: wtscli profile list, then wtscli profile use <name>.',
     );
   }
   const extensionCompatRange = health.status?.extensionCompatRange;
@@ -194,8 +194,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     if (!satisfiesRange(opts.cliVersion, extensionCompatRange)) {
       issues.push(
         `CLI version incompatible with extension: extension v${extensionVersion} requires CLI ${extensionCompatRange}, but CLI is v${opts.cliVersion}\n` +
-        '  Update the CLI: npm install -g @jackwener/opencli\n' +
-        '  Or download a compatible extension from: https://github.com/jackwener/opencli/releases',
+        '  Install the matching WTSCLI runtime and extension as one SeekTalent bundle.',
       );
     }
   } else if (extensionVersion && opts.cliVersion) {
@@ -205,7 +204,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     if (extMajor !== cliMajor) {
       issues.push(
         `Extension major version mismatch: extension v${extensionVersion} ≠ CLI v${opts.cliVersion}\n` +
-        '  Download the latest extension from: https://github.com/jackwener/opencli/releases',
+        '  Install the latest matching WTSCLI extension bundled with SeekTalent.',
       );
     }
   }
@@ -215,7 +214,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   if (extensionVersion && latestExtensionVersion && isNewerVersion(latestExtensionVersion, extensionVersion)) {
     issues.push(
       `Extension update available: v${extensionVersion} → v${latestExtensionVersion}\n` +
-      '  Download from: https://github.com/jackwener/opencli/releases',
+      '  Install the matching WTSCLI extension bundled with SeekTalent.',
     );
   }
   if (adapterShadows.length > 0) {
@@ -240,7 +239,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
 }
 
 export function renderBrowserDoctorReport(report: DoctorReport): string {
-  const lines = [`opencli v${report.cliVersion ?? 'unknown'} doctor` + ` (${getRuntimeLabel()})`, ''];
+  const lines = [`wtscli v${report.cliVersion ?? 'unknown'} doctor` + ` (${getRuntimeLabel()})`, ''];
 
   // Daemon status
   const daemonIcon = report.daemonFlaky

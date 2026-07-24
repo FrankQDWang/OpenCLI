@@ -61,6 +61,6 @@ describe('formatRootAdapterHelpText', () => {
       apps: [],
       sites: ['bilibili'],
     });
-    expect(text).toContain("'opencli <site> --help -f yaml'");
+    expect(text).toContain("'wtscli <site> --help -f yaml'");
   });
 });

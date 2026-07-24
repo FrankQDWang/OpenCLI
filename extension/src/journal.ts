@@ -17,6 +17,8 @@
 
 import type { Command, Result } from './protocol';
 
+// chrome.storage.session is scoped to the stable WTS extension ID. Keep the
+// original key so an upgrade can replay completed/started commands safely.
 const JOURNAL_KEY = 'opencli_command_journal_v1';
 const JOURNAL_MAX_ENTRIES = 64;
 /** Results larger than this are not recorded; a replayed id re-fails honestly. */

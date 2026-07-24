@@ -2,7 +2,7 @@ name: Doc Check
 
 on:
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, seektalent/1.8.6]
 
 concurrency:
   group: doc-check-${{ github.ref }}
