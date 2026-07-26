@@ -9,8 +9,6 @@ import { Page } from './page.js';
 import { profileRouteParams, resolveProfileSelection } from './profile.js';
 import { ensureBrowserBridgeReady } from './daemon-lifecycle.js';
 
-const DAEMON_SPAWN_TIMEOUT = 10000; // 10s to wait for daemon + extension
-
 export type BrowserBridgeState = 'idle' | 'connecting' | 'connected' | 'closing' | 'closed';
 
 /**
@@ -73,7 +71,7 @@ export class BrowserBridge implements IBrowserFactory {
 
   private async _ensureDaemon(timeoutSeconds?: number, contextId?: string): Promise<void> {
     const result = await ensureBrowserBridgeReady({
-      timeoutSeconds: timeoutSeconds ?? Math.ceil(DAEMON_SPAWN_TIMEOUT / 1000),
+      ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
       contextId,
     });
     this._daemonProc = result.spawnedProcess;
