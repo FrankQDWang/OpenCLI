@@ -1,4 +1,5 @@
 import type { DaemonHealth } from './daemon-transport.js';
+export { BROWSER_BRIDGE_READINESS_TIMEOUT_SECONDS } from './daemon-lifecycle.js';
 
 export type { DaemonHealth };
 

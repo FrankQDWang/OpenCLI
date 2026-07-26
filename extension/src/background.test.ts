@@ -1256,6 +1256,82 @@ describe('background tab isolation', () => {
     });
   });
 
+  it('closes a WebSocket stuck in CONNECTING and retries without waiting for the durable alarm', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const { chrome } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
+
+    await import('./background');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(MockWebSocket.instances).toHaveLength(1);
+    const stuck = MockWebSocket.instances[0];
+    expect(stuck.readyState).toBe(MockWebSocket.CONNECTING);
+
+    await vi.advanceTimersByTimeAsync(6_000);
+
+    expect(stuck.readyState).toBe(MockWebSocket.CLOSED);
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it('connects automatically when the exact daemon starts after the extension', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const { chrome } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+    let daemonReady = false;
+    vi.stubGlobal('fetch', vi.fn(async () => (
+      daemonReady ? wtsDaemonResponse() : new Response(null, { status: 503 })
+    )));
+
+    await import('./background');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(MockWebSocket.instances).toHaveLength(0);
+
+    daemonReady = true;
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it('automatically reconnects after an established daemon connection is lost', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const { chrome } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+    vi.stubGlobal('fetch', vi.fn(async () => wtsDaemonResponse()));
+    vi.stubGlobal('__WTSCLI_COMPAT_RANGE__', '>=0.1.0 <0.2.0');
+
+    await import('./background');
+    await vi.advanceTimersByTimeAsync(0);
+    const first = MockWebSocket.instances[0];
+    first.readyState = MockWebSocket.OPEN;
+    first.onopen?.();
+    first.readyState = MockWebSocket.CLOSED;
+    first.onclose?.();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it('uses the durable alarm to recover after an MV3 sleep-wake interval', async () => {
+    const { chrome } = createChromeMock();
+    vi.stubGlobal('chrome', chrome);
+    let daemonReady = false;
+    vi.stubGlobal('fetch', vi.fn(async () => (
+      daemonReady ? wtsDaemonResponse() : new Response(null, { status: 503 })
+    )));
+
+    await import('./background');
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    daemonReady = true;
+    const onAlarmListener = chrome.alarms.onAlarm.addListener.mock.calls[0][0];
+    await onAlarmListener({ name: 'keepalive' });
+    await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+  });
+
   it('does not open a WebSocket when the endpoint lacks the WTS transport marker', async () => {
     const { chrome } = createChromeMock();
     vi.stubGlobal('chrome', chrome);

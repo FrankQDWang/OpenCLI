@@ -1,4 +1,7 @@
-// Query connection status from background service worker
+const STATUS_REFRESH_MS = 1000;
+let currentContextId = '';
+
+function refreshStatus() {
 chrome.runtime.sendMessage({ type: 'getStatus' }, (resp) => {
   const card = document.getElementById('card');
   const dot = document.getElementById('dot');
@@ -25,9 +28,10 @@ chrome.runtime.sendMessage({ type: 'getStatus' }, (resp) => {
 
   if (typeof resp.contextId === 'string' && resp.contextId.length > 0) {
     contextId.textContent = resp.contextId;
+    currentContextId = resp.contextId;
     profileRow.style.display = 'flex';
-    copyBtn.addEventListener('click', () => copyToClipboard(resp.contextId, copyBtn));
   } else {
+    currentContextId = '';
     profileRow.style.display = 'none';
   }
 
@@ -50,6 +54,14 @@ chrome.runtime.sendMessage({ type: 'getStatus' }, (resp) => {
     hint.style.display = 'block';
   }
 });
+}
+
+document.getElementById('copyBtn').addEventListener('click', () => {
+  if (currentContextId) copyToClipboard(currentContextId, document.getElementById('copyBtn'));
+});
+refreshStatus();
+const statusRefreshTimer = setInterval(refreshStatus, STATUS_REFRESH_MS);
+window.addEventListener('unload', () => clearInterval(statusRefreshTimer), { once: true });
 
 function setState(card, dot, state) {
   card.classList.remove('connected', 'disconnected', 'connecting');

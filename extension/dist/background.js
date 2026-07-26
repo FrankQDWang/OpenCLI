@@ -755,6 +755,7 @@ async function executeWithJournal(cmd, execute) {
 let ws = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+const WS_CONNECT_WATCHDOG_MS = 5e3;
 const CONTEXT_ID_KEY = "opencli_context_id_v1";
 let currentContextId = "default";
 let contextIdPromise = null;
@@ -867,8 +868,15 @@ async function connectAttempt() {
     scheduleReconnect();
     return;
   }
+  const connectWatchdog = setTimeout(() => {
+    if (ws !== thisWs || thisWs.readyState !== WebSocket.CONNECTING) return;
+    ws = null;
+    thisWs.close();
+    scheduleReconnect();
+  }, WS_CONNECT_WATCHDOG_MS);
   thisWs.onopen = () => {
     if (ws !== thisWs) return;
+    clearTimeout(connectWatchdog);
     console.log("[wtscli] Connected to daemon");
     reconnectAttempts = 0;
     if (reconnectTimer) {
@@ -899,6 +907,7 @@ async function connectAttempt() {
     }
   };
   thisWs.onclose = () => {
+    clearTimeout(connectWatchdog);
     stopWsKeepalive(thisWs);
     if (ws !== thisWs) return;
     console.log("[wtscli] Disconnected from daemon");

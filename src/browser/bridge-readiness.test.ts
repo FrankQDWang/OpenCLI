@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  BROWSER_BRIDGE_READINESS_TIMEOUT_SECONDS,
   PRE_DISPATCH_ERROR_CODES,
   isPreDispatchError,
   waitForBridgeReady,
@@ -30,6 +31,9 @@ function notReadyHealth(state: Exclude<DaemonHealth['state'], 'ready'>): DaemonH
 }
 
 describe('waitForBridgeReady', () => {
+  it('uses one recovery budget that covers the durable MV3 wake interval', () => {
+    expect(BROWSER_BRIDGE_READINESS_TIMEOUT_SECONDS).toBe(40);
+  });
   it('returns immediately on the first ready health', async () => {
     const fetchHealth: HealthFetcher = vi.fn(async () => readyHealth());
 

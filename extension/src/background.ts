@@ -24,6 +24,7 @@ import { executeWithJournal } from './journal';
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
+const WS_CONNECT_WATCHDOG_MS = 5000;
 // These keys predate the WTSCLI product-name hard cut, but they have always
 // lived inside the stable WTS extension ID's private storage namespace.
 // Retaining them preserves context/lease/fence continuity across upgrades.
@@ -157,9 +158,16 @@ async function connectAttempt(): Promise<void> {
     scheduleReconnect();
     return;
   }
+  const connectWatchdog = setTimeout(() => {
+    if (ws !== thisWs || thisWs.readyState !== WebSocket.CONNECTING) return;
+    ws = null;
+    thisWs.close();
+    scheduleReconnect();
+  }, WS_CONNECT_WATCHDOG_MS);
 
   thisWs.onopen = () => {
     if (ws !== thisWs) return;
+    clearTimeout(connectWatchdog);
     console.log('[wtscli] Connected to daemon');
     reconnectAttempts = 0; // Reset on successful connection
     if (reconnectTimer) {
@@ -200,6 +208,7 @@ async function connectAttempt(): Promise<void> {
   };
 
   thisWs.onclose = () => {
+    clearTimeout(connectWatchdog);
     stopWsKeepalive(thisWs);
     if (ws !== thisWs) return;
     console.log('[wtscli] Disconnected from daemon');
