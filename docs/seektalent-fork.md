@@ -27,7 +27,18 @@ npm run build
 npm --prefix extension run build
 ```
 
-Load `extension/` as an unpacked Chrome extension for source development, or run `npm --prefix extension run package:release` and load the produced package directory.
+Loading `extension/` as an unpacked Chrome extension is an internal-development
+workflow only. It is not a production distribution mechanism: Chrome requires
+an explicit activation when an unpacked extension is first loaded and does not
+silently activate behind-the-back file replacement.
+
+`npm --prefix extension run package:release` produces the reviewable extension
+directory used by the paired bundle. That artifact is suitable for store
+submission or another Chrome-supported signed distribution channel, but this
+repository does not publish it. Ordinary-user delivery must require at most one
+initial Chrome confirmation; later runtime starts, extension reconnects, and
+extension updates must not require Developer Mode, manual daemon launch, or
+repeated reloads. Enterprise policy is optional, never a prerequisite.
 
 Example protocol sequence:
 
@@ -73,6 +84,8 @@ The product installer must stage and verify this complete directory before switc
 - Never run `npm install`, `npm update`, or a GitHub download on a user machine.
 - This fork hard-disables the upstream npm/GitHub update checker and update notices.
 - SeekTalent installs the runtime bundle and extension directory from its signed installer assets.
-- Ordinary Windows/macOS users load the stable unpacked extension directory once and reload it after an update; enterprise-managed Chrome can use policy deployment.
+- Unpacked extension loading is internal-test-only. A production release must
+  select and validate a Chrome-supported distribution channel before claiming
+  silent updates for ordinary Windows/macOS users.
 - SeekTalent must compare daemon and extension implementation, build ID, protocol major, and required capabilities before the first provider browser command.
 - A mismatch disables only the current browser-backed source. It does not cancel other sources or the whole run.

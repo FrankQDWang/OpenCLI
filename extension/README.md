@@ -4,6 +4,19 @@ The extension connects Chrome tabs to the local OpenCLI daemon. It uses Chrome
 extension APIs only as a transport and browser-control layer for explicit CLI
 commands.
 
+## Distribution boundary
+
+The unpacked-extension workflow is for internal testing only. Replacing files
+under an already loaded unpacked directory does not activate a new MV3 worker.
+The release package is intended for review and a Chrome-supported signed
+distribution path; creating it does not publish to the Chrome Web Store.
+
+The product contract is one initial Chrome confirmation at most for an ordinary
+user. After activation, daemon start/restart and extension reconnect happen
+automatically. Developer Mode, repeated reloads, and manual daemon launch are
+not supported production steps. Enterprise policy may automate distribution
+but is not required by the product contract.
+
 ## Permission Notes
 
 - `debugger`: sends CDP commands to OpenCLI-controlled or bound tabs.

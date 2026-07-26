@@ -30,6 +30,8 @@ export interface EnsureBrowserBridgeReadyResult {
   spawnedProcess: ChildProcess | null;
 }
 
+export const BROWSER_BRIDGE_READINESS_TIMEOUT_SECONDS = 40;
+
 export function resolveDaemonLaunchSpec(): DaemonLaunchSpec {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const parentDir = path.resolve(__dirname, '..');
@@ -160,7 +162,9 @@ export async function restartDaemon(opts: { stopTimeoutMs?: number; startTimeout
 export async function ensureBrowserBridgeReady(
   opts: { timeoutSeconds?: number; contextId?: string; verbose?: boolean } = {},
 ): Promise<EnsureBrowserBridgeReadyResult> {
-  const timeoutSeconds = opts.timeoutSeconds && opts.timeoutSeconds > 0 ? opts.timeoutSeconds : 10;
+  const timeoutSeconds = opts.timeoutSeconds && opts.timeoutSeconds > 0
+    ? opts.timeoutSeconds
+    : BROWSER_BRIDGE_READINESS_TIMEOUT_SECONDS;
   const timeoutMs = timeoutSeconds * 1000;
   const verbose = opts.verbose ?? true;
   const contextId = opts.contextId;
