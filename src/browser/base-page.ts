@@ -297,8 +297,20 @@ export abstract class BasePage implements IPage {
     // Custom dropdowns often listen to pointer/mouse down/up; DOM el.click()
     // only fires click and can silently report success without opening/selecting.
     const rect = await this.evaluate(boundingRectResolvedJs({ skipScroll: nativeScrolled })) as
-      | { x: number; y: number; w: number; h: number; visible: boolean }
+      | { x: number; y: number; w: number; h: number; visible: boolean; domActivatable?: boolean }
       | null;
+
+    // Chrome can acknowledge CDP mouse input on a background tab without
+    // dispatching a click. Native HTML activation is deterministic through
+    // HTMLElement.click(); custom controls keep the full CDP pointer chain.
+    if (rect?.domActivatable === true) {
+      const result = await this.evaluate(clickResolvedJs({ skipScroll: true })) as
+        | string
+        | { status: string; error?: string }
+        | null;
+      if (typeof result === 'string' || result == null || result.status === 'clicked') return resolved;
+      throw new Error(`Click failed: ${result.error ?? 'DOM activation failed'}`);
+    }
 
     if (rect?.visible === true) {
       const success = await this.tryNativeClick(rect.x, rect.y);

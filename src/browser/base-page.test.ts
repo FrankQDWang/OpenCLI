@@ -312,6 +312,23 @@ describe('BasePage native input routing', () => {
     expect(page.scripts.join('\n')).not.toContain('el.click()');
   });
 
+  it('activates native buttons through DOM click before background-tab CDP input', async () => {
+    const page = new ActionPage();
+    page.nativeClick = vi.fn().mockResolvedValue(undefined);
+    page.results = [
+      resolveOk,
+      { x: 50, y: 100, w: 200, h: 32, visible: true, domActivatable: true },
+      { status: 'clicked', x: 50, y: 100, w: 200, h: 32 },
+    ];
+
+    await page.click('#submit');
+
+    expect(page.nativeClick).not.toHaveBeenCalled();
+    expect(page.scripts).toHaveLength(3);
+    expect(page.scripts[1]).toContain('domActivatable');
+    expect(page.scripts[2]).toContain('el.click()');
+  });
+
   it('clicks AX snapshot refs through backend node coordinates without DOM resolver', async () => {
     const page = new ActionPage();
     page.nativeClick = vi.fn().mockResolvedValue(undefined);

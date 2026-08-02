@@ -314,7 +314,14 @@ export function boundingRectResolvedJs(opts: { skipScroll?: boolean } = {}): str
       const x = Math.round(rect.left + rect.width / 2);
       const y = Math.round(rect.top + rect.height / 2);
       const visible = w > 0 && h > 0;
-      return { x, y, w, h, visible };
+      const tag = el.tagName.toLowerCase();
+      const inputType = tag === 'input' ? (el.getAttribute('type') || 'text').toLowerCase() : '';
+      const domActivatable = tag === 'button'
+        || tag === 'label'
+        || tag === 'summary'
+        || (tag === 'a' && el.hasAttribute('href'))
+        || (tag === 'input' && ['button', 'submit', 'reset', 'checkbox', 'radio'].includes(inputType));
+      return { x, y, w, h, visible, domActivatable };
     })()
   `;
 }
